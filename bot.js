@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import {
   Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder,
-  PermissionFlagsBits, ChannelType, EmbedBuilder
+  PermissionFlagsBits, ChannelType, EmbedBuilder,
+  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
 } from 'discord.js';
 
 const token = process.env.DISCORD_TOKEN;
@@ -132,6 +133,19 @@ const layout = [
 
 const readOnly = new Set(['start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
 
+const ticketKinds = {
+  pomoc: { label: 'Pomoc ogólna', emoji: '❓', description: 'Pytania i kontakt z ekipą Benny’s', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] },
+  rekrutacja: { label: 'Podanie o pracę', emoji: '📋', description: 'Rekrutacja do warsztatu', staff: ['manager', 'director', 'coowner', 'owner'] },
+  skarga: { label: 'Skarga', emoji: '⚠️', description: 'Zgłoszenie problemu z pracownikiem', staff: ['director', 'coowner', 'owner'] },
+  wspolpraca: { label: 'Współpraca', emoji: '🤝', description: 'Propozycja partnerstwa lub współpracy', staff: ['manager', 'director', 'coowner', 'owner'] },
+  uslugi: { label: 'Naprawa / tuning', emoji: '🔧', description: 'Zapytanie o usługi, wycenę lub termin', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] }
+};
+
+const panelMenuId = 'benny_ticket_category_v1';
+const closeButtonId = 'benny_ticket_close_v1';
+const confirmButtonId = 'benny_ticket_close_confirm_v1';
+const cancelButtonId = 'benny_ticket_close_cancel_v1';
+
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Sprawdź, czy bot jest online'),
   new SlashCommandBuilder().setName('pomoc').setDescription('Zobacz dostępne komendy'),
@@ -139,6 +153,9 @@ const commands = [
     .setName('ticket').setDescription('Otwórz prywatne zgłoszenie do mechaników')
     .addStringOption(o => o.setName('opis').setDescription('Krótki opis sprawy').setMaxLength(500).setRequired(true)),
   new SlashCommandBuilder().setName('zamknij-ticket').setDescription('Zamknij bieżące zgłoszenie'),
+  new SlashCommandBuilder()
+    .setName('panel-ticket').setDescription('Opublikuj lub odśwież panel wyboru ticketów')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder()
     .setName('setup').setDescription('Utwórz lub uzupełnij strukturę serwera Benny’s')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
@@ -194,12 +211,145 @@ function introEmbed(key) {
     roles: ['🏷️ ODBIERZ ROLĘ', 'Na serwerze obowiązuje 16 stopni od **Nowy** do **Właściciel**.\n\nStopnie pracownicze przydziela kierownictwo warsztatu.'],
     offer: ['🛠️ NASZE USŁUGI', '🚗 Naprawy i diagnostyka\n🏎️ Tuning i personalizacja\n🎨 Stylizacja i wykończenie\n🔧 Konsultacje techniczne\n\nNapisz w kanale zamówień, aby omówić szczegóły.'],
     prices: ['💰 CENNIK', 'Ceny zależą od zakresu prac i rodzaju pojazdu. Zapytaj ekipę o indywidualną wycenę na kanale **zamówienia**.'],
-    tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wpisz **/ticket opis:Twoja sprawa**, aby otworzyć prywatny kanał widoczny dla Ciebie i mechaników.\n\nPo zakończeniu sprawy użyj **/zamknij-ticket**.'],
+    tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wybierz kategorię z menu poniżej, aby otworzyć prywatny ticket.'],
     form: ['🟥 WZÓR PODANIA', 'Przygotuj zgłoszenie z imieniem RP, doświadczeniem, dyspozycyjnością i uzasadnieniem chęci dołączenia do Benny’s. Wpisz **/ticket**, aby przesłać podanie prywatnie.']
   };
   const data = contents[key];
   if (!data) return null;
   return new EmbedBuilder().setColor(0xb61c25).setTitle(data[0]).setDescription(data[1]).setFooter({ text: 'BENNY’S ORIGINAL MOTOR WORKS • EST. LOS SANTOS' });
+}
+
+function ticketPanelMessage() {
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle('Tickety – Benny’s Original Motor Works')
+    .setDescription('Wybierz kategorię poniżej, aby utworzyć prywatny ticket.\nPo wybraniu odpowiedniej opcji bot utworzy dla Ciebie osobny kanał.')
+    .setFooter({ text: 'Benny’s Original Motor Works © 2026' });
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(panelMenuId)
+    .setPlaceholder('Wybierz opcję')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(Object.entries(ticketKinds).map(([value, item]) => ({
+      label: item.label,
+      value,
+      description: item.description,
+      emoji: item.emoji
+    })));
+
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] };
+}
+
+async function ensureTicketPanel(guild) {
+  await guild.channels.fetch();
+  const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
+  const channel = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.parentId === category?.id && c.name === '🔴〢tickety');
+  if (!channel) {
+    console.error('BENNY TICKETY: nie znaleziono kanału 🔴〢tickety');
+    return { ok: false, reason: 'Nie znaleziono kanału 🔴〢tickety.' };
+  }
+
+  const messages = await channel.messages.fetch({ limit: 100 });
+  const existing = messages.find(m => m.author.id === client.user.id && m.components.some(row => row.components.some(c => c.customId === panelMenuId)));
+  const legacy = messages.find(m => m.author.id === client.user.id && m.embeds.some(e => e.title === '🎫 PRYWATNE ZGŁOSZENIA'));
+  const oldPanel = existing || legacy;
+  let panel;
+  if (oldPanel) {
+    panel = await oldPanel.edit(ticketPanelMessage());
+    console.log('BENNY TICKETY: zaktualizowano panel ' + panel.id + ' w kanale ' + channel.id);
+  } else {
+    panel = await channel.send(ticketPanelMessage());
+    console.log('BENNY TICKETY: opublikowano panel ' + panel.id + ' w kanale ' + channel.id);
+  }
+
+  return { ok: true, channelId: channel.id, messageId: panel.id };
+}
+
+function ticketFromTopic(topic) {
+  const match = topic?.match(/^BENNY_TICKET_OWNER:(\d+)(?:\|([a-z0-9-]+))?$/);
+  return match ? { ownerId: match[1], kind: match[2] || 'pomoc' } : null;
+}
+
+async function memberMayCloseTicket(interaction, ticket) {
+  if (interaction.user.id === ticket.ownerId) return true;
+  const member = await interaction.guild.members.fetch(interaction.user.id);
+  const allowedKeys = ticketKinds[ticket.kind]?.staff || ticketKinds.pomoc.staff;
+  return allowedKeys.some(key => member.roles.cache.some(role => role.name === ranks.find(rank => rank.key === key)?.name));
+}
+
+async function openTicket(interaction, kindKey, description = '') {
+  const kind = ticketKinds[kindKey];
+  if (!kind) return interaction.reply({ content: 'Nieznana kategoria zgłoszenia.', ephemeral: true });
+  await interaction.deferReply({ ephemeral: true });
+  const guild = interaction.guild;
+  await guild.channels.fetch();
+  const previous = guild.channels.cache.find(channel => {
+    if (channel.type !== ChannelType.GuildText) return false;
+    const ticket = ticketFromTopic(channel.topic);
+    return ticket?.ownerId === interaction.user.id && ticket.kind === kindKey;
+  });
+  if (previous) return interaction.editReply('Masz już ticket w tej kategorii: <#' + previous.id + '>.');
+
+  const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
+  if (!category) return interaction.editReply('Kategoria TICKETY jest niedostępna. Skontaktuj się z zarządem.');
+
+  await guild.roles.fetch();
+  const allow = [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.ReadMessageHistory,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.AttachFiles,
+    PermissionFlagsBits.EmbedLinks
+  ];
+  const overrides = [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: interaction.user.id, allow },
+    { id: client.user.id, allow: [...allow, PermissionFlagsBits.ManageChannels] }
+  ];
+  const added = new Set(overrides.map(x => x.id));
+  for (const key of kind.staff) {
+    const role = guild.roles.cache.find(r => r.name === ranks.find(rank => rank.key === key)?.name);
+    if (!role || added.has(role.id)) continue;
+    overrides.push({ id: role.id, allow });
+    added.add(role.id);
+  }
+  const channel = await guild.channels.create({
+    name: 'ticket-' + kindKey + '-' + interaction.user.id.slice(-6),
+    type: ChannelType.GuildText,
+    parent: category.id,
+    topic: 'BENNY_TICKET_OWNER:' + interaction.user.id + '|' + kindKey,
+    permissionOverwrites: overrides,
+    reason: 'Benny’s: prywatny ticket ' + kind.label + ' (' + interaction.user.id + ')'
+  });
+
+  const content = '**Klient:** <@' + interaction.user.id + '>\n**Kategoria:** ' + kind.emoji + ' ' + kind.label
+    + (description ? '\n**Opis:** ' + description : '\nOpisz szczegółowo swoją sprawę poniżej.')
+    + '\n\nAby zamknąć zgłoszenie, kliknij przycisk poniżej lub wpisz **/zamknij-ticket**.';
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle('Ticket – ' + kind.label)
+    .setDescription(content)
+    .setFooter({ text: 'Benny’s Original Motor Works © 2026' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(closeButtonId).setLabel('Zamknij ticket').setEmoji('🔒').setStyle(ButtonStyle.Secondary)
+  );
+  await channel.send({ embeds: [embed], components: [row], allowedMentions: { parse: [] } });
+  console.log('BENNY TICKETY: utworzono ' + channel.name + ' kategoria=' + kindKey);
+  return interaction.editReply('✅ Utworzono prywatny ticket: <#' + channel.id + '>.');
+}
+
+async function askToCloseTicket(interaction) {
+  const ticket = ticketFromTopic(interaction.channel?.topic);
+  if (!ticket) return interaction.reply({ content: 'To nie jest kanał ticketu.', ephemeral: true });
+  if (!await memberMayCloseTicket(interaction, ticket)) {
+    return interaction.reply({ content: 'Nie masz uprawnień do zamknięcia tego ticketu.', ephemeral: true });
+  }
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(confirmButtonId).setLabel('Tak, zamknij').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(cancelButtonId).setLabel('Nie, anuluj').setStyle(ButtonStyle.Secondary)
+  );
+  return interaction.reply({ content: 'Czy na pewno chcesz zamknąć i usunąć ten kanał ticketu?', components: [row], ephemeral: true });
 }
 
 function overwritesMatch(channel, expected) {
@@ -375,6 +525,11 @@ async function configure(guild) {
       console.log('BENNY LAYOUT: pozostawiono kategorię ' + oldName + ' ze względu na ' + remaining.size + ' inne kanały');
     }
   }
+  try {
+    await ensureTicketPanel(guild);
+  } catch (error) {
+    console.error('BENNY TICKETY: błąd panelu: ' + error.message);
+  }
   console.log('BENNY LAYOUT GOTOWY: nowe kategorie=' + madeCategories + ', nowe kanały=' + madeChannels + ', usunięte dawne kanały=' + deletedChannels + ', usunięte dawne kategorie=' + deletedCategories);
   const summary = 'Utworzono ' + madeRoles + ' ról, ' + madeCategories + ' kategorii i ' + madeChannels + ' kanałów, usunięto ' + deletedChannels + ' dawnych kanałów.';
   console.log('BENNY SETUP GOTOWY: ' + summary);
@@ -397,14 +552,33 @@ client.once(Events.ClientReady, async ready => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand() || interaction.guildId !== guildId) return;
+  if (interaction.guildId !== guildId) return;
   try {
+    if (interaction.isStringSelectMenu() && interaction.customId === panelMenuId) {
+      return openTicket(interaction, interaction.values[0]);
+    }
+    if (interaction.isButton() && interaction.customId === closeButtonId) {
+      return askToCloseTicket(interaction);
+    }
+    if (interaction.isButton() && interaction.customId === cancelButtonId) {
+      return interaction.update({ content: 'Anulowano zamykanie ticketu.', components: [] });
+    }
+    if (interaction.isButton() && interaction.customId === confirmButtonId) {
+      const ticket = ticketFromTopic(interaction.channel?.topic);
+      if (!ticket || !await memberMayCloseTicket(interaction, ticket)) {
+        return interaction.update({ content: 'Nie masz uprawnień do zamknięcia tego ticketu.', components: [] });
+      }
+      await interaction.update({ content: '🔒 Ticket został zamknięty.', components: [] });
+      await interaction.channel.delete('Benny’s: zamknięcie ticketu przez ' + interaction.user.username);
+      return;
+    }
+    if (!interaction.isChatInputCommand()) return;
     const name = interaction.commandName;
     if (name === 'ping') {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
@@ -414,37 +588,19 @@ client.on(Events.InteractionCreate, async interaction => {
       const result = await runSetup(interaction.guild);
       return interaction.editReply(result.ok ? '✅ ' + result.summary : '❌ ' + result.reason);
     }
-    if (name === 'ticket') {
+    if (name === 'panel-ticket') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: 'Nie masz dostępu do panelu administracyjnego.', ephemeral: true });
+      }
       await interaction.deferReply({ ephemeral: true });
-      const guild = interaction.guild;
-      await guild.channels.fetch();
-      const found = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.topic === 'BENNY_TICKET_OWNER:' + interaction.user.id);
-      if (found) return interaction.editReply('Masz już otwarty ticket: <#' + found.id + '>.');
-      const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🎫・POMOC I ZGŁOSZENIA');
-      if (!category) return interaction.editReply('Najpierw administrator musi wykonać /setup.');
-      const roles = {};
-      for (const spec of ranks) roles[spec.key] = guild.roles.cache.find(r => r.name === spec.name);
-      const overwrites = permissionsFor(guild, roles, 'staff', client.user.id);
-      overwrites.push({ id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory], deny: [] });
-      const channel = await guild.channels.create({
-        name: 'ticket-' + interaction.user.id.slice(-6),
-        type: ChannelType.GuildText, parent: category.id,
-        topic: 'BENNY_TICKET_OWNER:' + interaction.user.id,
-        permissionOverwrites: overwrites,
-        reason: 'Ticket Benny’s utworzony przez ' + interaction.user.username
-      });
-      await channel.send({ embeds: [new EmbedBuilder().setColor(0x1669a9).setTitle('🎫 Nowe zgłoszenie').setDescription('**Klient:** <@' + interaction.user.id + '>\n**Sprawa:** ' + interaction.options.getString('opis', true) + '\n\nAby zakończyć zgłoszenie, wpisz **/zamknij-ticket**.')] });
-      return interaction.editReply('✅ Otworzono prywatne zgłoszenie: <#' + channel.id + '>.');
+      const result = await ensureTicketPanel(interaction.guild);
+      return interaction.editReply(result.ok ? '✅ Panel ticketów gotowy: <#' + result.channelId + '>.' : '❌ ' + result.reason);
+    }
+    if (name === 'ticket') {
+      return openTicket(interaction, 'pomoc', interaction.options.getString('opis', true));
     }
     if (name === 'zamknij-ticket') {
-      const channel = interaction.channel;
-      const match = channel.topic && channel.topic.match(/^BENNY_TICKET_OWNER:(\d+)$/);
-      if (!match) return interaction.reply({ content: 'Tę komendę można wykonać tylko w kanale ticketu.', ephemeral: true });
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      const isStaff = interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels) || member.roles.cache.some(role => staffKeys.some(key => ranks.find(r => r.key === key)?.name === role.name));
-      if (interaction.user.id !== match[1] && !isStaff) return interaction.reply({ content: 'Nie możesz zamknąć tego zgłoszenia.', ephemeral: true });
-      await interaction.reply({ content: '✅ Zgłoszenie zostaje zamknięte.', ephemeral: true });
-      return channel.delete('Zamknięcie ticketu przez ' + interaction.user.username);
+      return askToCloseTicket(interaction);
     }
     if (name === 'clear') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
