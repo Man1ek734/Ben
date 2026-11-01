@@ -20,10 +20,10 @@ const ranks = [
   { key: 'junior', name: '🛠️・Młodszy Mechanik', color: 0x4f9bbb, permissions: 0n },
   { key: 'mechanic', name: '🔧・Mechanik', color: 0x2483c9, permissions: 0n, hoist: true },
   { key: 'senior', name: '🏆・Starszy Mechanik', color: 0x1669a9, permissions: 0n },
-  { key: 'manager', name: '📋・Kierownik', color: 0xc43a3a, permissions: PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageNicknames | PermissionFlagsBits.MoveMembers, hoist: true },
-  { key: 'director', name: '🎖️・Dyrektor', color: 0xad1e2d, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ViewAuditLog, hoist: true },
-  { key: 'coowner', name: '💠・Współwłaściciel', color: 0xe3ad3f, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ViewAuditLog, hoist: true },
-  { key: 'owner', name: '👑・Właściciel', color: 0xf3c94d, permissions: PermissionFlagsBits.ManageGuild | PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ViewAuditLog, hoist: true }
+  { key: 'manager', name: '📋・Kierownik', color: 0xc43a3a, permissions: PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'director', name: '🎖️・Dyrektor', color: 0xad1e2d, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'coowner', name: '💠・Współwłaściciel', color: 0xe3ad3f, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'owner', name: '👑・Właściciel', color: 0xf3c94d, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true }
 ];
 
 const staffKeys = ['intern', 'junior', 'mechanic', 'senior', 'manager', 'director', 'coowner', 'owner'];
@@ -313,7 +313,8 @@ client.on(Events.InteractionCreate, async interaction => {
       const channel = interaction.channel;
       const match = channel.topic && channel.topic.match(/^BENNY_TICKET_OWNER:(\d+)$/);
       if (!match) return interaction.reply({ content: 'Tę komendę można wykonać tylko w kanale ticketu.', ephemeral: true });
-      const isStaff = interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels) || interaction.member.roles.some(role => staffKeys.some(key => ranks.find(r => r.key === key)?.name === role.name));
+      const member = await interaction.guild.members.fetch(interaction.user.id);
+      const isStaff = interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels) || member.roles.cache.some(role => staffKeys.some(key => ranks.find(r => r.key === key)?.name === role.name));
       if (interaction.user.id !== match[1] && !isStaff) return interaction.reply({ content: 'Nie możesz zamknąć tego zgłoszenia.', ephemeral: true });
       await interaction.reply({ content: '✅ Zgłoszenie zostaje zamknięte.', ephemeral: true });
       return channel.delete('Zamknięcie ticketu przez ' + interaction.user.username);
