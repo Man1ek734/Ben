@@ -5,6 +5,7 @@ import {
   ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Partials
 } from 'discord.js';
 import { registerServerLogs } from './server-logs.js';
+import { findManagedChannel, cleanupManagedDuplicates } from './channel-dedupe.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
@@ -179,7 +180,7 @@ function permissionsFor(guild, roles, area, botId, locked = false) {
       }
     }
   }
-  result.push({ id: botId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.Connect], deny: [] });
+  result.push({ id: botId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.Connect], deny: [] });
   return result;
 }
 function introEmbed(key) {
@@ -353,6 +354,7 @@ async function configure(guild) {
   let madeRoles = 0;
   let madeCategories = 0;
   let madeChannels = 0;
+  let removedDuplicates = 0;
   for (const spec of ranks) {
     let role = guild.roles.cache.find(r => r.name === spec.name);
     if (!role && legacyRoles[spec.name]) {
@@ -428,11 +430,12 @@ async function configure(guild) {
       }
     }
     const usedChannelIds = new Set();
+    const expectedNames = section.channels.map(spec => spec[1]);
     for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
       const kind = type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
       const area = overrideArea || section.area;
       const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey));
-      let channel = guild.channels.cache.find(c => c.parentId === category.id && c.type === kind && c.name === name && !usedChannelIds.has(c.id));
+      let channel = findManagedChannel(guild, category.id, kind, name, expectedNames, usedChannelIds);
       if (!channel && legacyMoves[name]) {
         const [sourceCategoryName, sourceChannelName] = legacyMoves[name];
         const sourceCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === sourceCategoryName);
@@ -465,6 +468,12 @@ async function configure(guild) {
         }
       }
     }
+    try {
+      const cleaned = await cleanupManagedDuplicates(guild, category, section);
+      removedDuplicates += cleaned.removed;
+    } catch (error) {
+      console.error('BENNY DUPLIKATY: problem w kategorii ' + category.name + ': ' + error.message);
+    }
   }
   const oldTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🎫・POMOC I ZGŁOSZENIA');
   const newTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
@@ -474,8 +483,9 @@ async function configure(guild) {
       console.log('BENNY LAYOUT: zachowano aktywny ticket ' + channel.name);
     }
   }
-  const deletedChannels = 0;
+  const deletedChannels = removedDuplicates;
   const deletedCategories = 0;
+  console.log('BENNY DUPLIKATY GOTOWE: usunięto ' + removedDuplicates + ' zduplikowanych kanałów.');
   console.log('BENNY LAYOUT GOTOWY: nowe kategorie=' + madeCategories + ', nowe kanały=' + madeChannels + ', usunięte dawne kanały=' + deletedChannels + ', usunięte dawne kategorie=' + deletedCategories);
   const summary = 'Utworzono ' + madeRoles + ' ról, ' + madeCategories + ' kategorii i ' + madeChannels + ' kanałów, usunięto ' + deletedChannels + ' dawnych kanałów.';
   console.log('BENNY SETUP GOTOWY: ' + summary);
