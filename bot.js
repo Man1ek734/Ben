@@ -182,20 +182,42 @@ function permissionsFor(guild, roles, area, botId, locked = false) {
   result.push({ id: botId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.Connect], deny: [] });
   return result;
 }
-function introEmbed(key) {
-  const contents = {
-    start: ['🏁 WITAJ W BENNY’S!', 'Witaj na oficjalnym serwerze **Benny’s Original Motor Works**! 🚘\n\n📜 Zapoznaj się z regulaminem.\n🏷️ Stopnie pracownicze nadaje kierownictwo.\n🛠️ Sprawdź ofertę i pochwal się swoim autem.\n🎫 Potrzebujesz pomocy? Wpisz **/ticket**.'],
-    rules: ['📜 REGULAMIN SERWERA', '🤝 Traktuj innych z szacunkiem.\n🚫 Zakaz spamu, obrażania i nękania.\n🔒 Nie publikuj danych prywatnych.\n📢 Reklamy tylko za zgodą administracji.\n🎫 Sprawy prywatne zgłaszaj poprzez **/ticket**.\n\nAdministracja może reagować na naruszenia zasad.'],
-    announcements: ['📢 OGŁOSZENIA', 'Tutaj ekipa Benny’s publikuje oficjalne informacje, zmiany i ważne komunikaty. 🏁'],
-    roles: ['🏷️ ODBIERZ ROLĘ', 'Na serwerze obowiązuje 16 stopni od **Nowy** do **Właściciel**.\n\nStopnie pracownicze przydziela kierownictwo warsztatu.'],
-    offer: ['🛠️ NASZE USŁUGI', '🚗 Naprawy i diagnostyka\n🏎️ Tuning i personalizacja\n🎨 Stylizacja i wykończenie\n🔧 Konsultacje techniczne\n\nNapisz w kanale zamówień, aby omówić szczegóły.'],
-    prices: ['💰 CENNIK', 'Ceny zależą od zakresu prac i rodzaju pojazdu. Zapytaj ekipę o indywidualną wycenę na kanale **zamówienia**.'],
-    tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wybierz kategorię z menu poniżej, aby otworzyć prywatny ticket.'],
-    form: ['🟥 WZÓR PODANIA', 'Przygotuj zgłoszenie z imieniem RP, doświadczeniem, dyspozycyjnością i uzasadnieniem chęci dołączenia do Benny’s. Wpisz **/ticket**, aby przesłać podanie prywatnie.']
-  };
-  const data = contents[key];
-  if (!data) return null;
-  return new EmbedBuilder().setColor(0xb61c25).setTitle(data[0]).setDescription(data[1]).setFooter({ text: 'BENNY’S ORIGINAL MOTOR WORKS • EST. LOS SANTOS' });
+const unwantedAutomaticEmbeds = new Set([
+  '🏁 WITAJ W BENNY’S!', '📜 REGULAMIN SERWERA', '📢 OGŁOSZENIA',
+  '🏷️ ODBIERZ ROLĘ', '🛠️ NASZE USŁUGI', '💰 CENNIK',
+  '🎫 PRYWATNE ZGŁOSZENIA', '🟥 WZÓR PODANIA'
+]);
+
+async function removeAutomaticEmbeds(guild) {
+  await guild.channels.fetch();
+  let removed = 0;
+  const targets = new Set();
+  for (const section of layout) {
+    const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === section.name);
+    if (!category) continue;
+    for (const spec of section.channels) {
+      if (!spec[3]) continue;
+      const channel = guild.channels.cache.find(c => c.type === ChannelType.GuildText &&
+        c.parentId === category.id && c.name === spec[1]);
+      if (channel) targets.add(channel);
+    }
+  }
+  for (const channel of targets) {
+    try {
+      const messages = await channel.messages.fetch({ limit: 100 });
+      for (const message of messages.values()) {
+        if (message.author.id !== client.user.id || message.content || message.components.length) continue;
+        if (!message.embeds.some(embed => unwantedAutomaticEmbeds.has(embed.title) &&
+          embed.footer?.text === 'BENNY’S ORIGINAL MOTOR WORKS • EST. LOS SANTOS')) continue;
+        await message.delete();
+        removed++;
+        console.log('BENNY CLEANUP: usunięto automatyczną wiadomość z ' + channel.name + ' (' + message.id + ')');
+      }
+    } catch (error) {
+      console.error('BENNY CLEANUP: ' + channel.name + ': ' + error.message);
+    }
+  }
+  console.log('BENNY CLEANUP GOTOWE: usunięto ' + removed + ' automatycznych wiadomości; kanały i panele zachowane.');
 }
 function ticketPanelMessage() {
   const embed = new EmbedBuilder()
@@ -459,13 +481,6 @@ async function configure(guild) {
       usedChannelIds.add(channel.id);
       madeChannels++;
       console.log('BENNY LAYOUT: utworzono kanał ' + channel.name);
-      if (kind === ChannelType.GuildText && embedKey) {
-        const embed = introEmbed(embedKey);
-        if (embed) {
-          try { await channel.send({ embeds: [embed] }); }
-          catch (error) { console.error('BENNY LAYOUT: błąd publikacji na ' + name + ': ' + error.message); }
-        }
-      }
     }
     try {
       const cleaned = await cleanupManagedDuplicates(guild, category, section);
@@ -501,6 +516,7 @@ client.once(Events.ClientReady, async ready => {
     const activeGuild = await guild.fetch();
     await runSetup(activeGuild);
     await workSystem.setup(activeGuild);
+    await removeAutomaticEmbeds(activeGuild);
   } catch (error) {
     console.error('BENNY SETUP ERROR: ' + error.message);
   }
