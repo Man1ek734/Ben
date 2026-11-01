@@ -51,7 +51,8 @@ const legacyMoves = {
   '💬〢ogłoszenia': ['🏁・START', '📢・ogłoszenia'],
   '🎫〢cennik': ['🚘・BENNY’S MOTOR WORKS', '💰・cennik'],
   '💬〢pracowniczy-chat': ['🔧・STREFA MECHANIKÓW', '💬・ekipa-chat'],
-  '📌〢zarzad-chat': ['👑・ZARZĄD', '💬・zarząd-chat']
+  '📌〢zarzad-chat': ['👑・ZARZĄD', '💬・zarząd-chat'],
+  '💵〢wynagrodzenia': ['Informacje', '💵〢tygodniówki']
 };
 const layout = [
   {
@@ -85,7 +86,7 @@ const layout = [
     name: 'Informacje', area: 'public', channels: [
       ['text', '💬〢ogłoszenia', 'Oficjalne wiadomości Benny’s.', 'announcements'],
       ['text', '💬〢zebrania', 'Komunikaty o zebraniach.', 'announcements', 'staff'],
-      ['text', '💵〢tygodniówki', 'Informacje o tygodniowych wypłatach.', 'announcements', 'staff'],
+      ['text', '💵〢wynagrodzenia', 'Raporty wypłat i przepracowanych godzin w każdą sobotę o 12:00.', '', 'staff'],
       ['text', '🎫〢cennik', 'Cennik usług Benny’s.', 'prices'],
       ['text', '⭕〢wprowadzenie', 'Najważniejsze informacje dla nowych członków.', 'start'],
       ['text', '📜〢zasady', 'Zasady serwera i pracy w Benny’s.', 'rules'],
