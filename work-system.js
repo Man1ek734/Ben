@@ -131,7 +131,7 @@ function panelMessage(data, now = Date.now(), serverIcon = null) {
     .addFields(
       { name: '🟢  NA STANOWISKU', value: '**' + working.length + '** pracowników', inline: true },
       { name: '🟡  NA PRZERWIE', value: '**' + breaks.length + '** pracowników', inline: true },
-      { name: '⏱️  CZAS NA ZMIANIE', value: '**' + duration(totalHoursMs) + '**', inline: true },
+      { name: '⏱️  GODZINY AKTYWNYCH', value: '**' + duration(totalHoursMs) + '**', inline: true },
       { name: '🛠️  AKTYWNE ZMIANY', value: listText(working) },
       { name: '☕  PRZERWY', value: listText(breaks) }
     )
@@ -210,25 +210,36 @@ export function createWorkSystem(client, guildId) {
   async function refreshPanel(force = false) {
     if (!panelChannel) return;
     let existing = null;
+    panelMessageId ||= data.panelMessageId;
     if (panelMessageId) {
       existing = await panelChannel.messages.fetch(panelMessageId).catch(() => null);
     }
     if (!existing) {
-      const recent = await panelChannel.messages.fetch({ limit: 100 });
-      existing = recent.find(m =>
-        m.author.id === client.user.id &&
-        m.components.some(row => row.components.some(c =>
-          [idFor.start, idFor.pause, idFor.stop, idFor.hours].includes(c.customId)
-        ))
-      );
-      if (existing) panelMessageId = existing.id;
+      let before = undefined;
+      for (let page = 0; page < 10 && !existing; page++) {
+        const recent = await panelChannel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+        existing = recent.find(m =>
+          m.author.id === client.user.id &&
+          m.components.some(row => row.components.some(c =>
+            [idFor.start, idFor.pause, idFor.stop, idFor.hours].includes(c.customId)
+          ))
+        );
+        before = recent.last()?.id;
+        if (recent.size < 100) break;
+      }
     }
+    const payload = panelMessage(data, Date.now(), guild?.iconURL({ size: 128 }) || null);
     if (existing) {
-      if (force) await existing.edit(panelMessage(data, Date.now(), guild?.iconURL({ size: 128 }) || null));
+      if (force) await existing.edit(payload);
+      panelMessageId = existing.id;
     } else {
-      const created = await panelChannel.send(panelMessage(data, Date.now(), guild?.iconURL({ size: 128 }) || null));
+      const created = await panelChannel.send(payload);
       panelMessageId = created.id;
       console.log('BENNY GODZINY: utworzono panel pracy ' + panelMessageId);
+    }
+    if (data.panelMessageId !== panelMessageId) {
+      data.panelMessageId = panelMessageId;
+      save(data);
     }
   }
   async function publishWeeks() {
