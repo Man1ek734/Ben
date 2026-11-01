@@ -256,14 +256,26 @@ async function configure(guild) {
     }
   }
   try {
-    const sorted = [...ranks].reverse().map(spec => roles[spec.key]);
-    const target = Math.max(1, botMember.roles.highest.position - sorted.length);
-    await guild.roles.setPositions(sorted.map((role, index) => ({
-      role: role.id, position: target + sorted.length - index - 1
-    })));
-    console.log('BENNY RANKS: ustawiono hierarchię od Nowy do Właściciel');
+    await guild.roles.fetch();
+    const self = await guild.members.fetchMe();
+    const desired = [...ranks].reverse().map(spec => guild.roles.cache.get(roles[spec.key].id));
+    const current = desired.map(role => ({ name: role.name, position: role.position, editable: role.editable }));
+    console.log('BENNY RANKS: najwyższa rola bota: ' + self.roles.highest.name + ' (pozycja ' + self.roles.highest.position + ')');
+    console.log('BENNY RANKS: pozycje przed sortowaniem: ' + JSON.stringify(current));
+    const locked = desired.filter(role => !role.editable);
+    if (locked.length) {
+      console.error('BENNY RANKS: bot nie może zmienić ról: ' + locked.map(role => role.name).join(', ') + '. Umieść rolę bota Benny’s ponad rangami warsztatu w ustawieniach Discorda.');
+    } else {
+      const positions = desired.map(role => role.position).sort((a, b) => b - a);
+      await guild.roles.setPositions(desired.map((role, index) => ({ role: role.id, position: positions[index] })));
+      await guild.roles.fetch();
+      const after = desired.map(role => ({ name: role.name, position: guild.roles.cache.get(role.id)?.position }));
+      console.log('BENNY RANKS: pozycje po sortowaniu: ' + JSON.stringify(after));
+      const correct = after.every((entry, index) => index === 0 || after[index - 1].position > entry.position);
+      console.log(correct ? 'BENNY RANKS GOTOWE: Właściciel > Współwłaściciel > ... > Nowy' : 'BENNY RANKS: kolejność nie została w pełni zastosowana');
+    }
   } catch (error) {
-    console.error('BENNY RANKS: nie udało się uporządkować rang: ' + error.message);
+    console.error('BENNY RANKS: błąd zmiany kolejności: ' + error.message);
   }
 
   for (const section of layout) {
