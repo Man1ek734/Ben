@@ -136,22 +136,71 @@ function rateEmbed() {
   return new EmbedBuilder()
     .setColor(0xb61c25)
     .setTitle('💰 GODZINÓWKI • BENNY’S MOTOR WORKS')
-    .setDescription('**Stawki za jedną przepracowaną godzinę (Hard RP)**\n\n' + gradeRates.map(([grade,rate]) => '**' + grade + '** — ' + currency(rate) + '/h').join('\n') + '\n\nPrzerwa nie jest płatna. Awans zmienia stawkę od chwili aktualizacji rangi na Discordzie. Rozliczenie następuje co poniedziałek za poprzedni tydzień.')
-    .setFooter({ text: 'Zestawienie Discord • Pieniądze w grze należy wypłacić oddzielnie' });
+    .setDescription(gradeRates.map(([grade, rate]) =>
+      '**' + grade + '** — ' + currency(rate) + '/h'
+    ).join('\n') + '\n\n📅 **Wynagrodzenia:** każda sobota o **12:00**. Po rozliczeniu tygodniowe godziny liczą się od zera.')
+    .setFooter({ text: 'Benny’s Original Motor Works © 2026' });
 }
+
 function payEmbed(key, summary) {
-  const lines = Object.entries(summary.users).sort((a,b)=>b[1].ms-a[1].ms);
-  const description = lines.length ? lines.slice(0,35).map(([id, u], i) =>
-    '**' + (i + 1) + '.** <@' + id + '> — **' + duration(u.ms) + '** — **' + currency(u.pay) + '**'
-  ).join('\n') : 'W tym tygodniu nie odnotowano pracy.';
+  const rows = Object.entries(summary.users).filter(([, user]) => user.ms > 0).sort((a, b) => b[1].ms - a[1].ms);
+  const columns = ['LP   PRACOWNIK             GODZINY      WYPŁATA', '----------------------------------------------------'];
+  for (const [i, [id, row]] of rows.slice(0, 35).entries()) {
+    const name = String(row.name || id.slice(-8)).replace(/[\r\n\t]/g, ' ').slice(0, 20).padEnd(20, ' ');
+    columns.push(String(i+1).padStart(2,'0') + '   ' + name + ' ' +
+      duration(row.ms).padStart(10, ' ') + ' ' + currency(row.pay).padStart(12, ' '));
+  }
+  if (!rows.length) columns.push('Brak przepracowanych godzin w tym okresie.');
+  if (rows.length > 35) columns.push('Pozostali pracownicy znajdują się w załączniku.');
+  const fence = String.fromCharCode(96).repeat(3);
   return new EmbedBuilder()
-    .setColor(0x24823b).setTitle('💵 TYGODNIOWE ROZLICZENIE • BENNY’S')
-    .setDescription('Tydzień rozpoczynający się **' + key + '** (poniedziałek–niedziela, Warszawa)\n\n' + description)
-    .addFields({ name: 'Łączna suma wypłat', value: currency(lines.reduce((sum,[,u])=>sum + u.pay, 0)), inline: true },
-      { name: 'Liczba pracowników', value: String(lines.length), inline: true })
-    .setFooter({ text: 'Raport rozliczeniowy • nie wykonuje przelewów FiveM' })
+    .setColor(0x24944d)
+    .setTitle('💵 WYNAGRODZENIA • TYGODNIOWE ROZLICZENIE')
+    .setDescription('**' + key + ' 12:00 – ' + payrollNextSaturday(key) +
+      ' 12:00 (Polska)**\n\n' + fence + 'text\n' + columns.join('\n') + '\n' + fence)
+    .addFields(
+      { name: '💰 Łącznie do wypłaty', value: currency(rows.reduce((v, [, row]) => v + row.pay, 0)), inline: true },
+      { name: '👥 Liczba pracowników', value: String(rows.length), inline: true },
+      { name: '🔄 Nowy okres', value: 'Tygodniowe liczniki rozpoczęły się od zera.' }
+    )
+    .setFooter({ text: 'Benny’s • Wypłaty w grze realizuje zarząd' })
     .setTimestamp();
 }
+
+function payrollCSV(key, week) {
+  const escape = value => '"' + String(value ?? '').replace(/^[=+\-@]/, '_$&').replace(/"/g, '""') + '"';
+  const headers = ['Discord ID', 'Pracownik', 'Minuty', 'Godziny', 'Wynagrodzenie $'];
+  const lines = [headers.map(escape).join(',')];
+  for (const [id, row] of Object.entries(week.users).filter(([, row]) => row.ms > 0)) {
+    lines.push([id, row.name, Math.round(row.ms / 60000), (row.ms/3600000).toFixed(3), Math.round(row.pay)].map(escape).join(','));
+  }
+  return new AttachmentBuilder(Buffer.from('\uFEFF' + lines.join('\r\n'), 'utf8'), {
+    name: 'wynagrodzenia-' + key + '.csv'
+  });
+}
+
+function upgradePayrollData(data, now = Date.now()) {
+  if (data.accountingSchema === 'sat-noon-v1') return false;
+  const currentKey = payrollPeriodKey(now);
+  const old = data.archivedLegacyWeeks || {};
+  const carry = { users: {}, publishedAt: null };
+  for (const [key, week] of Object.entries(data.weeks || {})) {
+    old[key] = week;
+    if (week.publishedAt || week.messageId) continue;
+    for (const [id, user] of Object.entries(week.users || {})) {
+      carry.users[id] ||= { ms: 0, pay: 0, name: short(user.name) };
+      carry.users[id].ms += user.ms || 0;
+      carry.users[id].pay += user.pay || 0;
+      carry.users[id].name = short(user.name);
+    }
+  }
+  data.archivedLegacyWeeks = old;
+  data.weeks = Object.keys(carry.users).length ? { [currentKey]: carry } : {};
+  data.accountingSchema = 'sat-noon-v1';
+  console.log('BENNY WYPŁATY: zachowano poprzedni zapis; niezapłacone godziny przeniesiono do ' + currentKey);
+  return true;
+}
+
 export function createWorkSystem(client, guildId) {
   let data;
   let guild;
