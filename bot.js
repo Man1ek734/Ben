@@ -2,8 +2,9 @@ import 'dotenv/config';
 import {
   Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder,
   PermissionFlagsBits, ChannelType, EmbedBuilder,
-  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
+  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Partials
 } from 'discord.js';
+import { registerServerLogs } from './server-logs.js';
 
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
@@ -47,16 +48,6 @@ const legacyRoles = {
 const staffKeys = ranks.map(rank => rank.key);
 const managers = ['manager', 'director', 'coowner', 'owner'];
 const executives = ['director', 'coowner', 'owner'];
-
-const legacyLayout = {
-  '🏁・START': ['👋・start-tutaj', '📜・regulamin', '📢・ogłoszenia', '🏷️・odbierz-role'],
-  '🚘・BENNY’S MOTOR WORKS': ['🛠️・oferta-usług', '💰・cennik', '📸・nasze-realizacje', '📝・zamówienia', '📅・wolne-terminy', '⭐・opinie-klientów'],
-  '💬・SPOŁECZNOŚĆ': ['💬・general', '❓・pytania', '📷・galeria-aut', '🎮・off-topic', '🤖・komendy-bota'],
-  '🎫・POMOC I ZGŁOSZENIA': ['🎟️・otwórz-ticket', '📌・pomoc'],
-  '🔧・STREFA MECHANIKÓW': ['💬・ekipa-chat', '📋・zlecenia-ekipy', '🔩・magazyn-części', '📆・grafik-pracy', '🧾・raporty-z-napraw'],
-  '👑・ZARZĄD': ['💬・zarząd-chat', '📊・finanse', '📑・decyzje'],
-  '🔊・KANAŁY GŁOSOWE': ['🔊・Poczekalnia', '🚗・Garaż 1', '🏎️・Garaż 2', '🔧・Ekipa', '👑・Zarząd']
-};
 
 const legacyMoves = {
   '⭕〢wprowadzenie': ['🏁・START', '👋・start-tutaj'],
@@ -167,7 +158,11 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(token);
 await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const baseIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildInvites];
+if (process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true') baseIntents.push(GatewayIntentBits.GuildMembers);
+if (process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true') baseIntents.push(GatewayIntentBits.MessageContent);
+const client = new Client({ intents: baseIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
+const sendLog = registerServerLogs(client);
 let setupPromise;
 
 function permissionsFor(guild, roles, area, botId, locked = false) {
@@ -346,6 +341,7 @@ async function openTicket(interaction, kindKey, description = '') {
   );
   await channel.send({ embeds: [embed], components: [row], allowedMentions: { parse: [] } });
   console.log('BENNY TICKETY: utworzono ' + channel.name + ' kategoria=' + kindKey);
+  await sendLog(guild, '🎫 Utworzono ticket', [['Użytkownik', '<@' + interaction.user.id + '>'], ['Kategoria', kind.label], ['Kanał', '<#' + channel.id + '>']], 0x57f287);
   return interaction.editReply('✅ Utworzono prywatny ticket: <#' + channel.id + '>.');
 }
 
@@ -513,33 +509,8 @@ async function configure(guild) {
     }
   }
 
-  let deletedChannels = 0;
-  let deletedCategories = 0;
-  await guild.channels.fetch();
-  for (const [oldName, oldChannelNames] of Object.entries(legacyLayout)) {
-    const oldCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === oldName);
-    if (!oldCategory) continue;
-    const knownOld = new Set(oldChannelNames);
-    for (const channel of guild.channels.cache.filter(c => c.parentId === oldCategory.id && knownOld.has(c.name)).values()) {
-      await channel.delete('Zastąpienie kanałów poprzedniego układu Benny’s zgodnie z życzeniem właściciela');
-      deletedChannels++;
-      console.log('BENNY LAYOUT: usunięto dawny kanał ' + channel.name);
-    }
-    await guild.channels.fetch();
-    const remaining = guild.channels.cache.filter(c => c.parentId === oldCategory.id);
-    if (remaining.size === 0) {
-      await oldCategory.delete('Usunięcie pustej kategorii poprzedniego układu Benny’s');
-      deletedCategories++;
-      console.log('BENNY LAYOUT: usunięto dawną kategorię ' + oldName);
-    } else {
-      console.log('BENNY LAYOUT: pozostawiono kategorię ' + oldName + ' ze względu na ' + remaining.size + ' inne kanały');
-    }
-  }
-  try {
-    await ensureTicketPanel(guild);
-  } catch (error) {
-    console.error('BENNY TICKETY: błąd panelu: ' + error.message);
-  }
+  const deletedChannels = 0;
+  const deletedCategories = 0;
   console.log('BENNY LAYOUT GOTOWY: nowe kategorie=' + madeCategories + ', nowe kanały=' + madeChannels + ', usunięte dawne kanały=' + deletedChannels + ', usunięte dawne kategorie=' + deletedCategories);
   const summary = 'Utworzono ' + madeRoles + ' ról, ' + madeCategories + ' kategorii i ' + madeChannels + ' kanałów, usunięto ' + deletedChannels + ' dawnych kanałów.';
   console.log('BENNY SETUP GOTOWY: ' + summary);
@@ -579,6 +550,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.update({ content: 'Nie masz uprawnień do zamknięcia tego ticketu.', components: [] });
       }
       await interaction.update({ content: '🔒 Ticket został zamknięty.', components: [] });
+      await sendLog(interaction.guild, '🔒 Zamknięto ticket', [['Użytkownik', '<@' + ticket.ownerId + '>'], ['Zamknął', '<@' + interaction.user.id + '>'], ['Kanał', interaction.channel.name + ' (' + interaction.channel.id + ')']], 0xed4245);
       await interaction.channel.delete('Benny’s: zamknięcie ticketu przez ' + interaction.user.username);
       return;
     }
