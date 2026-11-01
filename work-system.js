@@ -1,38 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder } from 'discord.js';
+import { payrollPeriodKey, payrollNextSaturday, periodBoundaryBetween } from './payroll-calendar.js';
 
 const STORE = process.env.WORK_DATA_FILE || '/data/benny-work-hours.json';
 const TIMEZONE = 'Europe/Warsaw';
 const gradeRates = [
-  ['Nowy',200], ['Uczeń',240], ['Praktykant',280],
-  ['Mechanik I Stopnia',320], ['Mechanik II Stopnia',360], ['Mechanik III Stopnia',400], ['Mechanik IV Stopnia',440],
-  ['Specjalista',500], ['Ekspert Mechaniki',560], ['Mistrz Mechaniki',630], ['Lider Zespołu',700],
-  ['Brygadzista',780], ['Kierownik',860], ['Dyrektor LSC',950], ['Współwłaściciel',1050], ['Właściciel',1200]
+  ['Nowy',500], ['Uczeń',600], ['Praktykant',700],
+  ['Mechanik I Stopnia',800], ['Mechanik II Stopnia',900], ['Mechanik III Stopnia',1000], ['Mechanik IV Stopnia',1100],
+  ['Specjalista',1250], ['Ekspert Mechaniki',1400], ['Mistrz Mechaniki',1550], ['Lider Zespołu',1700],
+  ['Brygadzista',1850], ['Kierownik',2000], ['Dyrektor LSC',2200], ['Współwłaściciel',2400], ['Właściciel',2600]
 ];
-const grades = new Map(gradeRates);
 const idFor = { start: 'benny_work_start', pause: 'benny_work_pause', stop: 'benny_work_stop', hours: 'benny_work_hours' };
 const statusName = { work: '🟢 W pracy', break: '🟡 Przerwa', off: '🔴 Po pracy' };
-const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
 const currency = n => Math.round(n || 0).toLocaleString('pl-PL') + ' $';
 const duration = ms => Math.floor(ms/3600000) + 'h ' + String(Math.floor((ms % 3600000)/60000)).padStart(2,'0') + 'm';
 const liveDuration = ms => [Math.floor(ms/3600000), Math.floor((ms%3600000)/60000), Math.floor((ms%60000)/1000)].map(n => String(n).padStart(2,'0')).join(':');
 const short = str => String(str || 'Pracownik').slice(0, 80);
-const ordinalWeek = time => {
-  const date = new Date(fmt.format(new Date(time)) + 'T00:00:00Z');
-  const day = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() - day + 1);
-  return date.toISOString().slice(0,10);
-};
-function boundary(start, end, key) {
-  let low = start + 1, high = end;
-  while (low < high) {
-    const mid = low + Math.floor((high - low)/2);
-    if (ordinalWeek(mid) === key) low = mid + 1;
-    else high = mid;
-  }
-  return low;
-}
 function weeklyEntry(data, key, id, name) {
   data.weeks[key] ||= { users: {}, publishedAt: null };
   data.weeks[key].users[id] ||= { ms: 0, pay: 0, name: short(name) };
@@ -45,8 +29,8 @@ function settle(data, id, end) {
   let cursor = u.since || end;
   if (cursor > end) cursor = end;
   while (cursor < end) {
-    const key = ordinalWeek(cursor);
-    const finish = ordinalWeek(end - 1) === key ? end : boundary(cursor, end, key);
+    const key = payrollPeriodKey(cursor);
+    const finish = payrollPeriodKey(end - 1) === key ? end : periodBoundaryBetween(cursor, end, key);
     if (u.status === 'work') {
       const row = weeklyEntry(data, key, id, u.name);
       const ms = finish - cursor;
@@ -77,7 +61,7 @@ function read() {
   return parsed;
 }
 function panelMessage(data, now = Date.now(), serverIcon = null) {
-  const key = ordinalWeek(now);
+  const key = payrollPeriodKey(now);
   const working = [];
   const breaks = [];
   let totalHoursMs = 0;
@@ -135,8 +119,7 @@ function panelMessage(data, now = Date.now(), serverIcon = null) {
       { name: '🛠️  AKTYWNE ZMIANY', value: listText(working) },
       { name: '☕  PRZERWY', value: listText(breaks) }
     )
-    .setFooter({ text: 'BENNY’S • LIVE co 20 sekund  |  Europe/Warsaw  |  Przerwy nie są płatne' })
-    .setTimestamp(now);
+;
 
   if (serverIcon) embed.setThumbnail(serverIcon);
 
@@ -244,7 +227,7 @@ export function createWorkSystem(client, guildId) {
   }
   async function publishWeeks() {
     const now = Date.now();
-    const currentKey = ordinalWeek(now);
+    const currentKey = payrollPeriodKey(now);
     for (const id of Object.keys(data.users)) settle(data, id, now);
     save(data);
     for (const [key, week] of Object.entries(data.weeks).sort(([a],[b])=>a.localeCompare(b))) {
@@ -262,7 +245,7 @@ export function createWorkSystem(client, guildId) {
     }
   }
   function memberSummary(id) {
-    const key = ordinalWeek(Date.now());
+    const key = payrollPeriodKey(Date.now());
     const row = data.weeks[key]?.users[id];
     const user = data.users[id];
     const elapsed = user?.status === 'work' ? Math.max(0,Date.now() - user.since) : 0;
