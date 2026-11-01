@@ -140,7 +140,7 @@ const ticketKinds = {
   wspolpraca: { label: 'Współpraca', emoji: '🤝', description: 'Propozycja partnerstwa lub współpracy', staff: ['manager', 'director', 'coowner', 'owner'] }
 };
 
-const panelMenuId = 'benny_ticket_category_v1';
+const panelMenuId = 'benny_ticket_category_v2';
 const closeButtonId = 'benny_ticket_close_v1';
 const confirmButtonId = 'benny_ticket_close_confirm_v1';
 const cancelButtonId = 'benny_ticket_close_cancel_v1';
@@ -240,7 +240,7 @@ function ticketPanelMessage() {
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] };
 }
 
-async function ensureTicketPanel(guild) {
+async function ensureTicketPanel(guild, forceResend = false) {
   await guild.channels.fetch();
   const category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
   const channel = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.parentId === category?.id && c.name === '🔴〢tickety');
@@ -250,16 +250,27 @@ async function ensureTicketPanel(guild) {
   }
 
   const messages = await channel.messages.fetch({ limit: 100 });
-  const existing = messages.find(m => m.author.id === client.user.id && m.components.some(row => row.components.some(c => c.customId === panelMenuId)));
-  const legacy = messages.find(m => m.author.id === client.user.id && m.embeds.some(e => e.title === '🎫 PRYWATNE ZGŁOSZENIA'));
-  const oldPanel = existing || legacy;
-  let panel;
-  if (oldPanel) {
-    panel = await oldPanel.edit(ticketPanelMessage());
-    console.log('BENNY TICKETY: zaktualizowano panel ' + panel.id + ' w kanale ' + channel.id);
-  } else {
-    panel = await channel.send(ticketPanelMessage());
-    console.log('BENNY TICKETY: opublikowano panel ' + panel.id + ' w kanale ' + channel.id);
+  const isTicketPanel = m => m.author.id === client.user.id && (
+    m.components.some(row => row.components.some(c => c.customId?.startsWith('benny_ticket_category_'))) ||
+    m.embeds.some(e => e.title === '🎫 PRYWATNE ZGŁOSZENIA')
+  );
+  const current = messages.find(m => m.author.id === client.user.id &&
+    m.components.some(row => row.components.some(c => c.customId === panelMenuId)));
+  if (current && !forceResend) {
+    console.log('BENNY TICKETY: panel bez zmian ' + current.id + ' w kanale ' + channel.id);
+    return { ok: true, channelId: channel.id, messageId: current.id };
+  }
+
+  const panel = await channel.send(ticketPanelMessage());
+  console.log('BENNY TICKETY: wysłano NOWY panel ' + panel.id + ' w kanale ' + channel.id);
+  for (const oldPanel of messages.filter(isTicketPanel).values()) {
+    if (oldPanel.id === panel.id) continue;
+    try {
+      await oldPanel.delete();
+      console.log('BENNY TICKETY: usunięto poprzedni panel ' + oldPanel.id);
+    } catch (error) {
+      console.error('BENNY TICKETY: nie udało się usunąć poprzedniego panelu ' + oldPanel.id + ': ' + error.message);
+    }
   }
 
   return { ok: true, channelId: channel.id, messageId: panel.id };
@@ -592,7 +603,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: 'Nie masz dostępu do panelu administracyjnego.', ephemeral: true });
       }
       await interaction.deferReply({ ephemeral: true });
-      const result = await ensureTicketPanel(interaction.guild);
+      const result = await ensureTicketPanel(interaction.guild, true);
       return interaction.editReply(result.ok ? '✅ Panel ticketów gotowy: <#' + result.channelId + '>.' : '❌ ' + result.reason);
     }
     if (name === 'ticket') {
