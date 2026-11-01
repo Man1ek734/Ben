@@ -47,82 +47,90 @@ const staffKeys = ranks.map(rank => rank.key);
 const managers = ['manager', 'director', 'coowner', 'owner'];
 const executives = ['director', 'coowner', 'owner'];
 
+const legacyLayout = {
+  '🏁・START': ['👋・start-tutaj', '📜・regulamin', '📢・ogłoszenia', '🏷️・odbierz-role'],
+  '🚘・BENNY’S MOTOR WORKS': ['🛠️・oferta-usług', '💰・cennik', '📸・nasze-realizacje', '📝・zamówienia', '📅・wolne-terminy', '⭐・opinie-klientów'],
+  '💬・SPOŁECZNOŚĆ': ['💬・general', '❓・pytania', '📷・galeria-aut', '🎮・off-topic', '🤖・komendy-bota'],
+  '🎫・POMOC I ZGŁOSZENIA': ['🎟️・otwórz-ticket', '📌・pomoc'],
+  '🔧・STREFA MECHANIKÓW': ['💬・ekipa-chat', '📋・zlecenia-ekipy', '🔩・magazyn-części', '📆・grafik-pracy', '🧾・raporty-z-napraw'],
+  '👑・ZARZĄD': ['💬・zarząd-chat', '📊・finanse', '📑・decyzje'],
+  '🔊・KANAŁY GŁOSOWE': ['🔊・Poczekalnia', '🚗・Garaż 1', '🏎️・Garaż 2', '🔧・Ekipa', '👑・Zarząd']
+};
+
+const legacyMoves = {
+  '⭕〢wprowadzenie': ['🏁・START', '👋・start-tutaj'],
+  '📜〢zasady': ['🏁・START', '📜・regulamin'],
+  '💬〢ogłoszenia': ['🏁・START', '📢・ogłoszenia'],
+  '🎫〢cennik': ['🚘・BENNY’S MOTOR WORKS', '💰・cennik'],
+  '💬〢pracowniczy-chat': ['🔧・STREFA MECHANIKÓW', '💬・ekipa-chat'],
+  '📌〢zarzad-chat': ['👑・ZARZĄD', '💬・zarząd-chat']
+};
+
 const layout = [
   {
-    name: '🏁・START',
-    area: 'public',
-    channels: [
-      ['text', '👋・start-tutaj', 'Najważniejsze informacje dla nowych członków.', 'start'],
-      ['text', '📜・regulamin', 'Zasady społeczności Benny’s Motor Works.', 'rules'],
-      ['text', '📢・ogłoszenia', 'Oficjalne komunikaty zarządu.', 'announcements'],
-      ['text', '🏷️・odbierz-role', 'Stopnie i stanowiska przydzielane przez kierownictwo.', 'roles']
+    name: '●', area: 'executive', channels: [
+      ['text', '📁〢zaproszenia', 'Zaproszenia i materiały dla zarządu.']
     ]
   },
   {
-    name: '🚘・BENNY’S MOTOR WORKS',
-    area: 'public',
-    channels: [
-      ['text', '🛠️・oferta-usług', 'Informacje o tuningu i usługach warsztatu.', 'offer'],
-      ['text', '💰・cennik', 'Wycena usług ustalana indywidualnie.', 'prices'],
-      ['text', '📸・nasze-realizacje', 'Zdjęcia i efekty pracy mechaników.'],
-      ['text', '📝・zamówienia', 'Zapytania o naprawy i modyfikacje pojazdów.'],
-      ['text', '📅・wolne-terminy', 'Dostępność i ustalanie wizyt.'],
-      ['text', '⭐・opinie-klientów', 'Opinie po skorzystaniu z usług.']
+    name: '● Zarząd-ZONE', area: 'executive', channels: [
+      ['text', '📌〢ważne', 'Najważniejsze informacje zarządu.'],
+      ['text', '📌〢notatnik', 'Notatki kierownictwa.'],
+      ['text', '📌〢zarzad-chat', 'Prywatny czat zarządu.'],
+      ['text', '📌〢auto-mod', 'Ustalenia dotyczące automoderacji.'],
+      ['text', '📌〢webhooki', 'Konfiguracje webhooków i integracji.'],
+      ['text', '📌〢wypłaty-firmowe', 'Wewnętrzne rozliczenia wynagrodzeń.'],
+      ['text', '📜〢pracownicy', 'Spis pracowników i przydziały.'],
+      ['text', 'reklama', 'Materiały promocyjne zatwierdzane przez zarząd.'],
+      ['text', 'zebranie', 'Organizacja zebrań zarządu.'],
+      ['text', 'csn-zarzad', 'Wewnętrzne sprawy zarządu CSN.']
     ]
   },
   {
-    name: '💬・SPOŁECZNOŚĆ',
-    area: 'public',
-    channels: [
-      ['text', '💬・general', 'Rozmowy społeczności Benny’s.'],
-      ['text', '❓・pytania', 'Zapytaj ekipę lub innych członków.'],
-      ['text', '📷・galeria-aut', 'Pochwal się swoim pojazdem.'],
-      ['text', '🎮・off-topic', 'Rozmowy poza tematem motoryzacji.'],
-      ['text', '🤖・komendy-bota', 'Testuj komendy /ping, /pomoc i inne.']
+    name: '● TICKETY', area: 'public', channels: [
+      ['text', '🟥〢wzór-podania', 'Wzór podania dla kandydatów.', 'form'],
+      ['text', '🔴〢tickety', 'Pomoc i prywatne zgłoszenia: /ticket.', 'tickets']
     ]
   },
   {
-    name: '🎫・POMOC I ZGŁOSZENIA',
-    area: 'public',
-    channels: [
-      ['text', '🎟️・otwórz-ticket', 'Wpisz /ticket, aby utworzyć prywatne zgłoszenie.', 'tickets'],
-      ['text', '📌・pomoc', 'Pytania dotyczące zamówień i działania serwera.']
+    name: 'Współprace', area: 'public', channels: [
+      ['text', '🤖〢partnerstwo', 'Informacje o partnerstwie.', 'partners'],
+      ['text', '🚙〢partnerstwo', 'Współprace motoryzacyjne.', 'partners'],
+      ['text', '😺〢partnerstwo', 'Współprace społecznościowe.', 'partners']
     ]
   },
   {
-    name: '🔧・STREFA MECHANIKÓW',
-    area: 'staff',
-    channels: [
-      ['text', '💬・ekipa-chat', 'Prywatny kanał pracowników.'],
-      ['text', '📋・zlecenia-ekipy', 'Zlecenia i przydział pracy.'],
-      ['text', '🔩・magazyn-części', 'Informacje o częściach i wyposażeniu.'],
-      ['text', '📆・grafik-pracy', 'Ustalenia dotyczące zmian i dyżurów.'],
-      ['text', '🧾・raporty-z-napraw', 'Raporty i zakończone naprawy.']
+    name: 'Informacje', area: 'public', channels: [
+      ['text', '💬〢ogłoszenia', 'Oficjalne wiadomości Benny’s.', 'announcements'],
+      ['text', '💬〢zebrania', 'Komunikaty o zebraniach.', 'announcements', 'staff'],
+      ['text', '💵〢tygodniówki', 'Informacje o tygodniowych wypłatach.', 'announcements', 'staff'],
+      ['text', '🎫〢cennik', 'Cennik usług Benny’s.', 'prices'],
+      ['text', '⭕〢wprowadzenie', 'Najważniejsze informacje dla nowych członków.', 'start'],
+      ['text', '📜〢zasady', 'Zasady serwera i pracy w Benny’s.', 'rules'],
+      ['text', '📜〢czarna-lista', 'Wewnętrzna lista ograniczeń.', 'announcements', 'staff'],
+      ['text', '📜〢changelog', 'Aktualizacje i zmiany.', 'announcements'],
+      ['text', '⏰ wyrobione-godziny', 'Raporty przepracowanych godzin.', '', 'staff']
     ]
   },
   {
-    name: '👑・ZARZĄD',
-    area: 'executive',
-    channels: [
-      ['text', '💬・zarząd-chat', 'Prywatna dyskusja osób zarządzających.'],
-      ['text', '📊・finanse', 'Wewnętrzne rozliczenia.'],
-      ['text', '📑・decyzje', 'Ustalenia zarządu.']
-    ]
-  },
-  {
-    name: '🔊・KANAŁY GŁOSOWE',
-    area: 'public',
-    channels: [
-      ['voice', '🔊・Poczekalnia'],
-      ['voice', '🚗・Garaż 1'],
-      ['voice', '🏎️・Garaż 2'],
-      ['voice', '🔧・Ekipa', '', '', 'staff'],
-      ['voice', '👑・Zarząd', '', '', 'executive']
+    name: '● Strefa Pracownika', area: 'staff', channels: [
+      ['text', '💬〢pracowniczy-chat', 'Czat pracowników Benny’s.'],
+      ['text', '🎥〢klipy', 'Nagrania z pracy.'],
+      ['text', '📷〢fotki', 'Zdjęcia i realizacje pracowników.'],
+      ['text', '📈〢awanse-degrady', 'Informacje o awansach i degradacjach.'],
+      ['text', '📉〢zwolnienia', 'Informacje o zwolnieniach.'],
+      ['text', '📉〢wypowiedzenia', 'Wypowiedzenia i sprawy kadrowe.'],
+      ['text', '🧠〢plusy-minusy', 'Oceny pracy i uwagi.'],
+      ['text', '🗓️〢urlopy', 'Zgłoszenia urlopowe.'],
+      ['text', '📢〢reklama', 'Materiały reklamowe pracowników.'],
+      ['text', '📣〢dostępność-zarządu', 'Godziny dostępności zarządu.'],
+      ['text', '👖〢ubrania', 'Ubrania i stroje pracownicze.'],
+      ['text', '🪪〢csn', 'Dane identyfikacyjne pracowników.']
     ]
   }
 ];
 
-const readOnly = new Set(['start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets']);
+const readOnly = new Set(['start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
 
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Sprawdź, czy bot jest online'),
@@ -186,7 +194,8 @@ function introEmbed(key) {
     roles: ['🏷️ ODBIERZ ROLĘ', 'Na serwerze obowiązuje 16 stopni od **Nowy** do **Właściciel**.\n\nStopnie pracownicze przydziela kierownictwo warsztatu.'],
     offer: ['🛠️ NASZE USŁUGI', '🚗 Naprawy i diagnostyka\n🏎️ Tuning i personalizacja\n🎨 Stylizacja i wykończenie\n🔧 Konsultacje techniczne\n\nNapisz w kanale zamówień, aby omówić szczegóły.'],
     prices: ['💰 CENNIK', 'Ceny zależą od zakresu prac i rodzaju pojazdu. Zapytaj ekipę o indywidualną wycenę na kanale **zamówienia**.'],
-    tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wpisz **/ticket opis:Twoja sprawa**, aby utworzyć prywatny kanał dostępny tylko dla Ciebie i ekipy.\n\nPo zakończeniu sprawy użyj **/zamknij-ticket**.']
+    tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wpisz **/ticket opis:Twoja sprawa**, aby otworzyć prywatny kanał widoczny dla Ciebie i mechaników.\n\nPo zakończeniu sprawy użyj **/zamknij-ticket**.'],
+    form: ['🟥 WZÓR PODANIA', 'Przygotuj zgłoszenie z imieniem RP, doświadczeniem, dyspozycyjnością i uzasadnieniem chęci dołączenia do Benny’s. Wpisz **/ticket**, aby przesłać podanie prywatnie.']
   };
   const data = contents[key];
   if (!data) return null;
@@ -296,37 +305,78 @@ async function configure(guild) {
         await category.permissionOverwrites.set(overwrites, 'Ustawienie uprawnień aktualnych stopni Benny’s');
       }
     }
+    const usedChannelIds = new Set();
     for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
       const kind = type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
-      const existing = guild.channels.cache.find(c => c.parentId === category.id && c.type === kind && c.name === name);
       const area = overrideArea || section.area;
-      if (existing) {
-        const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey));
-        if (!overwritesMatch(existing, overwrites)) {
-          await existing.permissionOverwrites.set(overwrites, 'Aktualizacja dostępu do kanałów Benny’s');
+      const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey));
+      let channel = guild.channels.cache.find(c => c.parentId === category.id && c.type === kind && c.name === name && !usedChannelIds.has(c.id));
+      if (!channel && legacyMoves[name]) {
+        const [sourceCategoryName, sourceChannelName] = legacyMoves[name];
+        const sourceCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === sourceCategoryName);
+        const sourceChannel = sourceCategory && guild.channels.cache.find(c => c.parentId === sourceCategory.id && c.type === kind && c.name === sourceChannelName);
+        if (sourceChannel) {
+          await sourceChannel.edit({ name, parent: category.id, topic, permissionOverwrites: overwrites }, 'Przeniesienie kanału do nowego układu Benny’s');
+          channel = sourceChannel;
+          console.log('BENNY LAYOUT: przeniesiono ' + sourceChannelName + ' na ' + name);
+        }
+      }
+      if (channel) {
+        usedChannelIds.add(channel.id);
+        if (!overwritesMatch(channel, overwrites)) {
+          await channel.permissionOverwrites.set(overwrites, 'Uprawnienia nowego układu Benny’s');
         }
         continue;
       }
-      const options = {
-        name, type: kind, parent: category.id,
-        permissionOverwrites: permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey)),
-        reason: 'Konfiguracja kanałów Benny’s Motor Works'
-      };
-      if (kind === ChannelType.GuildText && topic) options.topic = topic;
-      if (kind === ChannelType.GuildVoice) options.userLimit = 0;
-      const channel = await guild.channels.create(options);
+      channel = await guild.channels.create({
+        name, type: kind, parent: category.id, topic,
+        permissionOverwrites: overwrites, reason: 'Nowy układ kanałów Benny’s'
+      });
+      usedChannelIds.add(channel.id);
       madeChannels++;
-      console.log('BENNY SETUP: kanał ' + channel.name);
+      console.log('BENNY LAYOUT: utworzono kanał ' + channel.name);
       if (kind === ChannelType.GuildText && embedKey) {
         const embed = introEmbed(embedKey);
         if (embed) {
           try { await channel.send({ embeds: [embed] }); }
-          catch (err) { console.error('BENNY SETUP: nie udało się wysłać powitania na ' + name + ': ' + err.message); }
+          catch (error) { console.error('BENNY LAYOUT: błąd publikacji na ' + name + ': ' + error.message); }
         }
       }
     }
   }
-  const summary = 'Utworzono ' + madeRoles + ' ról, ' + madeCategories + ' kategorii i ' + madeChannels + ' kanałów.';
+  const oldTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🎫・POMOC I ZGŁOSZENIA');
+  const newTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
+  if (oldTicketCategory && newTicketCategory) {
+    for (const channel of guild.channels.cache.filter(c => c.parentId === oldTicketCategory.id && c.type === ChannelType.GuildText && c.topic?.startsWith('BENNY_TICKET_OWNER:')).values()) {
+      await channel.setParent(newTicketCategory.id, { lockPermissions: false, reason: 'Zachowanie aktywnego ticketu w nowej kategorii' });
+      console.log('BENNY LAYOUT: zachowano aktywny ticket ' + channel.name);
+    }
+  }
+
+  let deletedChannels = 0;
+  let deletedCategories = 0;
+  await guild.channels.fetch();
+  for (const [oldName, oldChannelNames] of Object.entries(legacyLayout)) {
+    const oldCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === oldName);
+    if (!oldCategory) continue;
+    const knownOld = new Set(oldChannelNames);
+    for (const channel of guild.channels.cache.filter(c => c.parentId === oldCategory.id && knownOld.has(c.name)).values()) {
+      await channel.delete('Zastąpienie kanałów poprzedniego układu Benny’s zgodnie z życzeniem właściciela');
+      deletedChannels++;
+      console.log('BENNY LAYOUT: usunięto dawny kanał ' + channel.name);
+    }
+    await guild.channels.fetch();
+    const remaining = guild.channels.cache.filter(c => c.parentId === oldCategory.id);
+    if (remaining.size === 0) {
+      await oldCategory.delete('Usunięcie pustej kategorii poprzedniego układu Benny’s');
+      deletedCategories++;
+      console.log('BENNY LAYOUT: usunięto dawną kategorię ' + oldName);
+    } else {
+      console.log('BENNY LAYOUT: pozostawiono kategorię ' + oldName + ' ze względu na ' + remaining.size + ' inne kanały');
+    }
+  }
+  console.log('BENNY LAYOUT GOTOWY: nowe kategorie=' + madeCategories + ', nowe kanały=' + madeChannels + ', usunięte dawne kanały=' + deletedChannels + ', usunięte dawne kategorie=' + deletedCategories);
+  const summary = 'Utworzono ' + madeRoles + ' ról, ' + madeCategories + ' kategorii i ' + madeChannels + ' kanałów, usunięto ' + deletedChannels + ' dawnych kanałów.';
   console.log('BENNY SETUP GOTOWY: ' + summary);
   return { ok: true, summary };
 }
