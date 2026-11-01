@@ -14,19 +14,36 @@ if (!token || !clientId) {
 }
 
 const ranks = [
-  { key: 'client', name: '🚗・Klient', color: 0x8292a8, permissions: 0n },
-  { key: 'vip', name: '💎・VIP', color: 0xc56be4, permissions: 0n },
-  { key: 'intern', name: '🧰・Praktykant', color: 0x89939a, permissions: 0n },
-  { key: 'junior', name: '🛠️・Młodszy Mechanik', color: 0x4f9bbb, permissions: 0n },
-  { key: 'mechanic', name: '🔧・Mechanik', color: 0x2483c9, permissions: 0n, hoist: true },
-  { key: 'senior', name: '🏆・Starszy Mechanik', color: 0x1669a9, permissions: 0n },
-  { key: 'manager', name: '📋・Kierownik', color: 0xc43a3a, permissions: PermissionFlagsBits.ManageMessages, hoist: true },
-  { key: 'director', name: '🎖️・Dyrektor', color: 0xad1e2d, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageMessages, hoist: true },
-  { key: 'coowner', name: '💠・Współwłaściciel', color: 0xe3ad3f, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true },
-  { key: 'owner', name: '👑・Właściciel', color: 0xf3c94d, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true }
+  { key: 'new', name: 'Nowy', color: 0x8892a2, permissions: 0n },
+  { key: 'student', name: 'Uczeń', color: 0x779ba9, permissions: 0n },
+  { key: 'intern', name: 'Praktykant', color: 0x5296ab, permissions: 0n },
+  { key: 'mechanic1', name: 'Mechanik I Stopnia', color: 0x328bb3, permissions: 0n },
+  { key: 'mechanic2', name: 'Mechanik II Stopnia', color: 0x287fae, permissions: 0n },
+  { key: 'mechanic3', name: 'Mechanik III Stopnia', color: 0x1871b1, permissions: 0n },
+  { key: 'mechanic4', name: 'Mechanik IV Stopnia', color: 0x1763b4, permissions: 0n },
+  { key: 'specialist', name: 'Specjalista', color: 0x296ebc, permissions: 0n },
+  { key: 'expert', name: 'Ekspert Mechaniki', color: 0x6562c4, permissions: 0n },
+  { key: 'master', name: 'Mistrz Mechaniki', color: 0x9360c8, permissions: 0n },
+  { key: 'leader', name: 'Lider Zespołu', color: 0xc171af, permissions: 0n, hoist: true },
+  { key: 'foreman', name: 'Brygadzista', color: 0xd57b69, permissions: 0n, hoist: true },
+  { key: 'manager', name: 'Kierownik', color: 0xd4504b, permissions: PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'director', name: 'Dyrektor LSC', color: 0xc93439, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'coowner', name: 'Współwłaściciel', color: 0xdca943, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true },
+  { key: 'owner', name: 'Właściciel', color: 0xf5cd52, permissions: PermissionFlagsBits.ManageChannels | PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages, hoist: true }
 ];
 
-const staffKeys = ['intern', 'junior', 'mechanic', 'senior', 'manager', 'director', 'coowner', 'owner'];
+const legacyRoles = {
+  'Praktykant': '🧰・Praktykant',
+  'Mechanik I Stopnia': '🛠️・Młodszy Mechanik',
+  'Mechanik II Stopnia': '🔧・Mechanik',
+  'Mechanik III Stopnia': '🏆・Starszy Mechanik',
+  'Kierownik': '📋・Kierownik',
+  'Dyrektor LSC': '🎖️・Dyrektor',
+  'Współwłaściciel': '💠・Współwłaściciel',
+  'Właściciel': '👑・Właściciel'
+};
+
+const staffKeys = ranks.map(rank => rank.key);
 const managers = ['manager', 'director', 'coowner', 'owner'];
 const executives = ['director', 'coowner', 'owner'];
 
@@ -38,7 +55,7 @@ const layout = [
       ['text', '👋・start-tutaj', 'Najważniejsze informacje dla nowych członków.', 'start'],
       ['text', '📜・regulamin', 'Zasady społeczności Benny’s Motor Works.', 'rules'],
       ['text', '📢・ogłoszenia', 'Oficjalne komunikaty zarządu.', 'announcements'],
-      ['text', '🏷️・odbierz-role', 'Odbierz rolę klienta komendą /klient.', 'roles']
+      ['text', '🏷️・odbierz-role', 'Stopnie i stanowiska przydzielane przez kierownictwo.', 'roles']
     ]
   },
   {
@@ -110,7 +127,6 @@ const readOnly = new Set(['start', 'rules', 'announcements', 'roles', 'offer', '
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Sprawdź, czy bot jest online'),
   new SlashCommandBuilder().setName('pomoc').setDescription('Zobacz dostępne komendy'),
-  new SlashCommandBuilder().setName('klient').setDescription('Odbierz rolę klienta'),
   new SlashCommandBuilder()
     .setName('ticket').setDescription('Otwórz prywatne zgłoszenie do mechaników')
     .addStringOption(o => o.setName('opis').setDescription('Krótki opis sprawy').setMaxLength(500).setRequired(true)),
@@ -164,10 +180,10 @@ function permissionsFor(guild, roles, area, botId, locked = false) {
 
 function introEmbed(key) {
   const contents = {
-    start: ['🏁 WITAJ W BENNY’S!', 'Witaj na oficjalnym serwerze **Benny’s Original Motor Works**! 🚘\n\n📜 Zapoznaj się z regulaminem.\n🏷️ Odbierz rolę komendą **/klient**.\n🛠️ Sprawdź ofertę i pochwal się swoim autem.\n🎫 Potrzebujesz pomocy? Wpisz **/ticket**.'],
+    start: ['🏁 WITAJ W BENNY’S!', 'Witaj na oficjalnym serwerze **Benny’s Original Motor Works**! 🚘\n\n📜 Zapoznaj się z regulaminem.\n🏷️ Stopnie pracownicze nadaje kierownictwo.\n🛠️ Sprawdź ofertę i pochwal się swoim autem.\n🎫 Potrzebujesz pomocy? Wpisz **/ticket**.'],
     rules: ['📜 REGULAMIN SERWERA', '🤝 Traktuj innych z szacunkiem.\n🚫 Zakaz spamu, obrażania i nękania.\n🔒 Nie publikuj danych prywatnych.\n📢 Reklamy tylko za zgodą administracji.\n🎫 Sprawy prywatne zgłaszaj poprzez **/ticket**.\n\nAdministracja może reagować na naruszenia zasad.'],
     announcements: ['📢 OGŁOSZENIA', 'Tutaj ekipa Benny’s publikuje oficjalne informacje, zmiany i ważne komunikaty. 🏁'],
-    roles: ['🏷️ ODBIERZ ROLĘ', 'Wpisz **/klient**, aby otrzymać rolę 🚗・Klient.\n\nRole mechaników i zarządu nadaje administracja.'],
+    roles: ['🏷️ ODBIERZ ROLĘ', 'Na serwerze obowiązuje 16 stopni od **Nowy** do **Właściciel**.\n\nStopnie pracownicze przydziela kierownictwo warsztatu.'],
     offer: ['🛠️ NASZE USŁUGI', '🚗 Naprawy i diagnostyka\n🏎️ Tuning i personalizacja\n🎨 Stylizacja i wykończenie\n🔧 Konsultacje techniczne\n\nNapisz w kanale zamówień, aby omówić szczegóły.'],
     prices: ['💰 CENNIK', 'Ceny zależą od zakresu prac i rodzaju pojazdu. Zapytaj ekipę o indywidualną wycenę na kanale **zamówienia**.'],
     tickets: ['🎫 PRYWATNE ZGŁOSZENIA', 'Wpisz **/ticket opis:Twoja sprawa**, aby utworzyć prywatny kanał dostępny tylko dla Ciebie i ekipy.\n\nPo zakończeniu sprawy użyj **/zamknij-ticket**.']
@@ -175,6 +191,18 @@ function introEmbed(key) {
   const data = contents[key];
   if (!data) return null;
   return new EmbedBuilder().setColor(0xb61c25).setTitle(data[0]).setDescription(data[1]).setFooter({ text: 'BENNY’S ORIGINAL MOTOR WORKS • EST. LOS SANTOS' });
+}
+
+function overwritesMatch(channel, expected) {
+  const current = channel.permissionOverwrites.cache;
+  if (current.size !== expected.length) return false;
+  return expected.every(entry => {
+    const actual = current.get(entry.id);
+    if (!actual) return false;
+    const allow = entry.allow.reduce((value, flag) => value | BigInt(flag), 0n);
+    const deny = entry.deny.reduce((value, flag) => value | BigInt(flag), 0n);
+    return actual.allow.bitfield === allow && actual.deny.bitfield === deny;
+  });
 }
 
 async function configure(guild) {
@@ -195,15 +223,47 @@ async function configure(guild) {
 
   for (const spec of ranks) {
     let role = guild.roles.cache.find(r => r.name === spec.name);
+    if (!role && legacyRoles[spec.name]) {
+      role = guild.roles.cache.find(r => r.name === legacyRoles[spec.name]);
+      if (role) {
+        await role.edit({
+          name: spec.name, color: spec.color, permissions: spec.permissions,
+          hoist: !!spec.hoist, mentionable: false
+        }, 'Aktualizacja stopni Benny’s Motor Works');
+        console.log('BENNY RANKS: zmieniono ' + legacyRoles[spec.name] + ' na ' + spec.name);
+      }
+    }
     if (!role) {
       role = await guild.roles.create({
         name: spec.name, color: spec.color, permissions: spec.permissions,
-        hoist: !!spec.hoist, mentionable: false, reason: 'Konfiguracja Benny’s Motor Works'
+        hoist: !!spec.hoist, mentionable: false, reason: 'Stopnie Benny’s Motor Works'
       });
       madeRoles++;
-      console.log('BENNY SETUP: utworzono rolę ' + role.name);
+      console.log('BENNY RANKS: dodano ' + role.name);
+    }
+    if (role.permissions.bitfield !== spec.permissions || role.color !== spec.color || role.hoist !== !!spec.hoist) {
+      await role.edit({
+        color: spec.color, permissions: spec.permissions, hoist: !!spec.hoist, mentionable: false
+      }, 'Aktualizacja uprawnień stopnia Benny’s');
     }
     roles[spec.key] = role;
+  }
+  for (const oldName of ['🚗・Klient', '💎・VIP']) {
+    const oldRole = guild.roles.cache.find(r => r.name === oldName);
+    if (oldRole) {
+      await oldRole.delete('Zastąpienie poprzednich ról stopniami Benny’s');
+      console.log('BENNY RANKS: usunięto poprzednią rolę ' + oldName);
+    }
+  }
+  try {
+    const sorted = [...ranks].reverse().map(spec => roles[spec.key]);
+    const target = Math.max(1, botMember.roles.highest.position - sorted.length);
+    await guild.roles.setPositions(sorted.map((role, index) => ({
+      role: role.id, position: target + sorted.length - index - 1
+    })));
+    console.log('BENNY RANKS: ustawiono hierarchię od Nowy do Właściciel');
+  } catch (error) {
+    console.error('BENNY RANKS: nie udało się uporządkować rang: ' + error.message);
   }
 
   for (const section of layout) {
@@ -216,12 +276,23 @@ async function configure(guild) {
       });
       madeCategories++;
       console.log('BENNY SETUP: kategoria ' + category.name);
+    } else {
+      const overwrites = permissionsFor(guild, roles, section.area, client.user.id);
+      if (!overwritesMatch(category, overwrites)) {
+        await category.permissionOverwrites.set(overwrites, 'Ustawienie uprawnień aktualnych stopni Benny’s');
+      }
     }
     for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
       const kind = type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
       const existing = guild.channels.cache.find(c => c.parentId === category.id && c.type === kind && c.name === name);
-      if (existing) continue;
       const area = overrideArea || section.area;
+      if (existing) {
+        const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey));
+        if (!overwritesMatch(existing, overwrites)) {
+          await existing.permissionOverwrites.set(overwrites, 'Aktualizacja dostępu do kanałów Benny’s');
+        }
+        continue;
+      }
       const options = {
         name, type: kind, parent: category.id,
         permissionOverwrites: permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey)),
@@ -269,7 +340,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/klient** – odbierz rolę\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
@@ -278,14 +349,6 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.deferReply({ ephemeral: true });
       const result = await runSetup(interaction.guild);
       return interaction.editReply(result.ok ? '✅ ' + result.summary : '❌ ' + result.reason);
-    }
-    if (name === 'klient') {
-      const role = interaction.guild.roles.cache.find(r => r.name === '🚗・Klient');
-      if (!role) return interaction.reply({ content: 'Rola klienta nie jest jeszcze utworzona.', ephemeral: true });
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      if (member.roles.cache.has(role.id)) return interaction.reply({ content: 'Masz już rolę klienta. 🚗', ephemeral: true });
-      await member.roles.add(role, 'Samodzielne odebranie roli klienta');
-      return interaction.reply({ content: '✅ Otrzymujesz rolę ' + role.name + '!', ephemeral: true });
     }
     if (name === 'ticket') {
       await interaction.deferReply({ ephemeral: true });
