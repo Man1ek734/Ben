@@ -306,9 +306,12 @@ export function createWorkSystem(client, guildId) {
         save(data);
         continue;
       }
-      const marker = 'BENNY-PAYROLL:' + key;
       const recent = await paymentChannel.messages.fetch({ limit: 100 });
-      const already = recent.find(message => message.author.id === client.user.id && message.content === marker);
+      const already = recent.find(message =>
+        message.author.id === client.user.id &&
+        message.embeds.some(embed => embed.title === '💵 WYNAGRODZENIA • TYGODNIOWE ROZLICZENIE' &&
+          embed.description?.startsWith('**' + key + ' 12:00'))
+      );
       if (already) {
         week.messageId = already.id;
         week.publishedAt = now;
@@ -316,7 +319,6 @@ export function createWorkSystem(client, guildId) {
         continue;
       }
       const message = await paymentChannel.send({
-        content: marker,
         embeds: [payEmbed(key, week)],
         files: [payrollCSV(key, week)],
         allowedMentions: { parse: [] }
