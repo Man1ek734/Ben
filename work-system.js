@@ -76,7 +76,7 @@ function read() {
   if (!parsed.users || !parsed.weeks) throw new Error('Niepoprawny plik danych godzin.');
   return parsed;
 }
-function panelMessage(data, now = Date.now()) {
+function panelMessage(data, now = Date.now(), serverIcon = null) {
   const key = ordinalWeek(now);
   const working = [];
   const breaks = [];
@@ -138,7 +138,6 @@ function panelMessage(data, now = Date.now()) {
     .setFooter({ text: 'BENNY’S • LIVE co 20 sekund  |  Europe/Warsaw  |  Przerwy nie są płatne' })
     .setTimestamp(now);
 
-  const serverIcon = guild?.iconURL({ size: 128 });
   if (serverIcon) embed.setThumbnail(serverIcon);
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -225,9 +224,9 @@ export function createWorkSystem(client, guildId) {
       if (existing) panelMessageId = existing.id;
     }
     if (existing) {
-      if (force) await existing.edit(panelMessage(data));
+      if (force) await existing.edit(panelMessage(data, Date.now(), guild?.iconURL({ size: 128 }) || null));
     } else {
-      const created = await panelChannel.send(panelMessage(data));
+      const created = await panelChannel.send(panelMessage(data, Date.now(), guild?.iconURL({ size: 128 }) || null));
       panelMessageId = created.id;
       console.log('BENNY GODZINY: utworzono panel pracy ' + panelMessageId);
     }
