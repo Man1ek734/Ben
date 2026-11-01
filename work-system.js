@@ -211,6 +211,7 @@ export function createWorkSystem(client, guildId) {
   let tickTimer;
   let panelMessageId;
   let lastWeekCheck = 0;
+  let lastPeriodKey;
   let lastIdleRefresh = 0;
   const queue = fn => {
     const job = inProgress.catch(() => {}).then(fn);
@@ -368,6 +369,14 @@ export function createWorkSystem(client, guildId) {
   async function setup(server) {
     guild = server;
     if (!data) data = read();
+    if (upgradePayrollData(data)) save(data);
+    const startupTime = Date.now();
+    for (const id of Object.keys(data.users)) {
+      settle(data, id, startupTime);
+      const grade = gradeRates.find(([name]) => name === data.users[id].grade);
+      if (grade) data.users[id].rate = grade[1];
+    }
+    save(data);
     await guild.roles.fetch();
     await ensureChannels();
     await removeInvites();
@@ -375,13 +384,16 @@ export function createWorkSystem(client, guildId) {
     await refreshPanel(true);
     if (!tickTimer) {
       lastWeekCheck = Date.now();
+      lastPeriodKey = payrollPeriodKey(lastWeekCheck);
       tickTimer = setInterval(() => {
         queue(async () => {
           try {
             const now = Date.now();
-            if (now - lastWeekCheck >= 60000) {
+            const currentPeriod = payrollPeriodKey(now);
+            if (now - lastWeekCheck >= 60000 || currentPeriod !== lastPeriodKey) {
               await publishWeeks();
               lastWeekCheck = now;
+              lastPeriodKey = currentPeriod;
             }
             const hasActive = Object.values(data.users).some(u => u.status !== 'off');
             if (hasActive || now - lastIdleRefresh >= 60000) {
@@ -396,7 +408,7 @@ export function createWorkSystem(client, guildId) {
       tickTimer.unref();
       console.log('BENNY GODZINY LIVE: automatyczna aktualizacja co 20 sekund.');
     }
-    console.log('BENNY GODZINY GOTOWE: ' + panelChannel.id + ' tygodniówki=' + paymentChannel.id + ' plik=' + STORE);
+    console.log('BENNY GODZINY GOTOWE: ' + panelChannel.id + ' wynagrodzenia=' + paymentChannel.id + ' plik=' + STORE);
   }
   async function handle(interaction) {
     const action = Object.entries(idFor).find(([, id])=>id===interaction.customId)?.[0];
