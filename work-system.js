@@ -222,8 +222,12 @@ export function createWorkSystem(client, guildId) {
     const info = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === 'Informacje');
     if (!info) throw new Error('Nie znaleziono kategorii Informacje.');
     panelChannel = guild.channels.cache.find(c => c.parentId === info.id && c.name.includes('wyrobione-godziny'));
-    paymentChannel = guild.channels.cache.find(c => c.parentId === info.id && c.name.includes('tygodniówki'));
-    if (!panelChannel || !paymentChannel) throw new Error('Brak kanału wyrobione-godziny lub tygodniówki.');
+    paymentChannel = guild.channels.cache.find(c => c.parentId === info.id && c.name.includes('wynagrodzenia')) ||
+      guild.channels.cache.find(c => c.parentId === info.id && c.name.includes('tygodniówki'));
+    if (!panelChannel || !paymentChannel) throw new Error('Brak kanału wyrobione-godziny lub wynagrodzenia.');
+    if (paymentChannel.name.includes('tygodniówki')) {
+      await paymentChannel.setName('💵〢wynagrodzenia', 'Sobotnie rozliczenia Benny’s');
+    }
     rateChannel = guild.channels.cache.find(c => c.parentId === info.id && c.name.includes('godzinówki'));
     if (!rateChannel) {
       rateChannel = await guild.channels.create({
@@ -237,7 +241,13 @@ export function createWorkSystem(client, guildId) {
     }
     const messages = await rateChannel.messages.fetch({ limit: 100 });
     const old = messages.find(m=>m.author.id===client.user.id && m.embeds.some(e=>e.title==='💰 GODZINÓWKI • BENNY’S MOTOR WORKS'));
-    if (!old) await rateChannel.send({ embeds:[rateEmbed()] });
+    const updatedRates = rateEmbed();
+    if (!old) {
+      await rateChannel.send({ embeds:[updatedRates] });
+    } else if (old.embeds[0]?.description !== updatedRates.toJSON().description) {
+      await old.edit({ embeds:[updatedRates] });
+      console.log('BENNY WYPŁATY: zaktualizowano tabelę stawek na ' + rateChannel.id);
+    }
   }
   async function refreshPanel(force = false) {
     if (!panelChannel) return;
@@ -278,19 +288,42 @@ export function createWorkSystem(client, guildId) {
     const now = Date.now();
     const currentKey = payrollPeriodKey(now);
     for (const id of Object.keys(data.users)) settle(data, id, now);
+
+    if (!data.startedAtPeriod) data.startedAtPeriod = currentKey;
+    const prev = new Date(currentKey + 'T12:00:00Z');
+    prev.setUTCDate(prev.getUTCDate() - 7);
+    const previousKey = prev.toISOString().slice(0, 10);
+    if (previousKey >= data.startedAtPeriod) {
+      data.weeks[previousKey] ||= { users: {}, publishedAt: null };
+    }
     save(data);
-    for (const [key, week] of Object.entries(data.weeks).sort(([a],[b])=>a.localeCompare(b))) {
+
+    for (const [key, week] of Object.entries(data.weeks).sort(([a],[b]) => a.localeCompare(b))) {
       if (key >= currentKey || week.publishedAt) continue;
       if (week.messageId) {
         week.publishedAt = now;
         save(data);
         continue;
       }
-      const message = await paymentChannel.send({ embeds:[payEmbed(key, week)], allowedMentions:{parse:[]} });
+      const marker = 'BENNY-PAYROLL:' + key;
+      const recent = await paymentChannel.messages.fetch({ limit: 100 });
+      const already = recent.find(message => message.author.id === client.user.id && message.content === marker);
+      if (already) {
+        week.messageId = already.id;
+        week.publishedAt = now;
+        save(data);
+        continue;
+      }
+      const message = await paymentChannel.send({
+        content: marker,
+        embeds: [payEmbed(key, week)],
+        files: [payrollCSV(key, week)],
+        allowedMentions: { parse: [] }
+      });
       week.messageId = message.id;
       week.publishedAt = Date.now();
       save(data);
-      console.log('BENNY GODZINY: opublikowano tydzień ' + key + ', wpisów=' + Object.keys(week.users).length);
+      console.log('BENNY WYPŁATY: opublikowano okres ' + key + ', pracowników=' + Object.keys(week.users).length);
     }
   }
   function memberSummary(id) {
