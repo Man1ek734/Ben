@@ -137,8 +137,7 @@ const ticketKinds = {
   pomoc: { label: 'Pomoc ogólna', emoji: '❓', description: 'Pytania i kontakt z ekipą Benny’s', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] },
   rekrutacja: { label: 'Podanie o pracę', emoji: '📋', description: 'Rekrutacja do warsztatu', staff: ['manager', 'director', 'coowner', 'owner'] },
   skarga: { label: 'Skarga', emoji: '⚠️', description: 'Zgłoszenie problemu z pracownikiem', staff: ['director', 'coowner', 'owner'] },
-  wspolpraca: { label: 'Współpraca', emoji: '🤝', description: 'Propozycja partnerstwa lub współpracy', staff: ['manager', 'director', 'coowner', 'owner'] },
-  uslugi: { label: 'Naprawa / tuning', emoji: '🔧', description: 'Zapytanie o usługi, wycenę lub termin', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] }
+  wspolpraca: { label: 'Współpraca', emoji: '🤝', description: 'Propozycja partnerstwa lub współpracy', staff: ['manager', 'director', 'coowner', 'owner'] }
 };
 
 const panelMenuId = 'benny_ticket_category_v1';
