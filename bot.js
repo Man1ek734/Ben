@@ -267,7 +267,9 @@ async function configure(guild) {
       console.error('BENNY RANKS: bot nie może zmienić ról: ' + locked.map(role => role.name).join(', ') + '. Umieść rolę bota Benny’s ponad rangami warsztatu w ustawieniach Discorda.');
     } else {
       const positions = desired.map(role => role.position).sort((a, b) => b - a);
-      await guild.roles.setPositions(desired.map((role, index) => ({ role: role.id, position: positions[index] })));
+      await rest.patch(Routes.guildRoles(guild.id), {
+        body: desired.map((role, index) => ({ id: role.id, position: positions[index] }))
+      });
       await guild.roles.fetch();
       const after = desired.map(role => ({ name: role.name, position: guild.roles.cache.get(role.id)?.position }));
       console.log('BENNY RANKS: pozycje po sortowaniu: ' + JSON.stringify(after));
@@ -275,7 +277,7 @@ async function configure(guild) {
       console.log(correct ? 'BENNY RANKS GOTOWE: Właściciel > Współwłaściciel > ... > Nowy' : 'BENNY RANKS: kolejność nie została w pełni zastosowana');
     }
   } catch (error) {
-    console.error('BENNY RANKS: błąd zmiany kolejności: ' + error.message);
+    console.error('BENNY RANKS: błąd zmiany kolejności: ' + error.message + ' status=' + error.status + ' code=' + error.code + ' detail=' + JSON.stringify(error.rawError || {}));
   }
 
   for (const section of layout) {
