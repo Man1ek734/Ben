@@ -75,6 +75,17 @@ export function registerServerLogs(client) {
   event(Events.GuildUpdate, (a,b) => a.name !== b.name && send(b,'🏠 Zmieniono nazwę serwera',[['Przed',a.name],['Po',b.name]],yellow));
   event(Events.InviteCreate, i => send(i.guild,'🔗 Utworzono zaproszenie',[['Kod',i.code],['Utworzył',usr(i.inviter)]],green));
   event(Events.InviteDelete, i => send(i.guild,'🗑️ Usunięto zaproszenie',[['Kod',i.code]],red));
+  event(Events.MessageReactionAdd, (reaction, user) => !user.bot && reaction.message.channelId !== DEST && send(reaction.message.guild,'➕ Dodano reakcję',[['Osoba',usr(user)],['Reakcja',reaction.emoji.toString()],['Kanał',chan(reaction.message.channelId)]],blue));
+  event(Events.MessageReactionRemove, (reaction, user) => !user.bot && reaction.message.channelId !== DEST && send(reaction.message.guild,'➖ Usunięto reakcję',[['Osoba',usr(user)],['Reakcja',reaction.emoji.toString()],['Kanał',chan(reaction.message.channelId)]],yellow));
+  event(Events.AutoModerationActionExecution, e => send(e.guild,'🛡️ AutoMod zablokował działanie',[['Osoba','<@'+e.userId+'>'],['Kanał',chan(e.channelId)],['Reguła',e.ruleId]],yellow));
+  event(Events.AutoModerationRuleCreate, r => send(r.guild,'🛡️ Dodano regułę AutoMod',[['Nazwa',r.name]],green));
+  event(Events.AutoModerationRuleUpdate, (a,b) => send(b.guild,'🛡️ Zmieniono AutoMod',[['Reguła',b.name]],yellow));
+  event(Events.AutoModerationRuleDelete, r => send(r.guild,'🛡️ Usunięto regułę AutoMod',[['Nazwa',r.name]],red));
+  event(Events.GuildEmojiCreate, e => send(e.guild,'😀 Dodano emoji',[['Nazwa',e.name]],green));
+  event(Events.GuildEmojiDelete, e => send(e.guild,'🗑️ Usunięto emoji',[['Nazwa',e.name]],red));
+  event(Events.GuildEmojiUpdate, (a,b) => a.name !== b.name && send(b.guild,'✏️ Zmieniono emoji',[['Przed',a.name],['Po',b.name]],yellow));
+  event(Events.ThreadCreate, t => send(t.guild,'🧵 Utworzono wątek',[['Nazwa',t.name]],green));
+  event(Events.ThreadDelete, t => send(t.guild,'🗑️ Usunięto wątek',[['Nazwa',t.name]],red));
   event(Events.GuildAuditLogEntryCreate, (entry,g) => send(g,'🛡️ Dziennik audytu',[['Akcja',AuditLogEvent[entry.action] || entry.action],['Wykonał',usr(entry.executor)],['Cel',entry.target?.id || 'Nieznany'],['Powód',entry.reason || 'Nie podano']],gray));
   event(Events.InteractionCreate, i => i.isChatInputCommand() && send(i.guild,'⌨️ Komenda bota',[['Osoba',usr(i.user)],['Komenda','/' + i.commandName],['Kanał',chan(i.channelId)]],gray));
   return send;
