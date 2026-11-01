@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { registerServerLogs } from './server-logs.js';
 import { findManagedChannel, cleanupManagedDuplicates } from './channel-dedupe.js';
+import { createWorkSystem } from './work-system.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
@@ -54,11 +55,6 @@ const legacyMoves = {
 };
 const layout = [
   {
-    name: '●', area: 'executive', channels: [
-      ['text', '📁〢zaproszenia', 'Zaproszenia i materiały dla zarządu.']
-    ]
-  },
-  {
     name: '● Zarząd-ZONE', area: 'executive', channels: [
       ['text', '📌〢ważne', 'Najważniejsze informacje zarządu.'],
       ['text', '📌〢notatnik', 'Notatki kierownictwa.'],
@@ -95,7 +91,8 @@ const layout = [
       ['text', '📜〢zasady', 'Zasady serwera i pracy w Benny’s.', 'rules'],
       ['text', '📜〢czarna-lista', 'Wewnętrzna lista ograniczeń.', 'announcements', 'staff'],
       ['text', '📜〢changelog', 'Aktualizacje i zmiany.', 'announcements'],
-      ['text', '⏰-wyrobione-godziny', 'Raporty przepracowanych godzin.', '', 'staff']
+      ['text', '⏰-wyrobione-godziny', 'Panel rozpoczęcia, przerwy i zakończenia pracy.', '', 'staff'],
+      ['text', '💰〢godzinówki', 'Stawki godzinowe stopni Benny’s.', '', 'staff']
     ]
   },
   {
@@ -151,6 +148,7 @@ if (process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true') baseIntents.push(Gatew
 if (process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true') baseIntents.push(GatewayIntentBits.MessageContent);
 const client = new Client({ intents: baseIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 const sendLog = registerServerLogs(client);
+const workSystem = createWorkSystem(client, guildId);
 let setupPromise;
 function permissionsFor(guild, roles, area, botId, locked = false) {
   const everyone = { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [] };
@@ -499,7 +497,9 @@ client.once(Events.ClientReady, async ready => {
   console.log('Bot zalogowany: ' + ready.user.tag);
   try {
     const guild = await client.guilds.fetch(guildId);
-    await runSetup(await guild.fetch());
+    const activeGuild = await guild.fetch();
+    await runSetup(activeGuild);
+    await workSystem.setup(activeGuild);
   } catch (error) {
     console.error('BENNY SETUP ERROR: ' + error.message);
   }
@@ -507,6 +507,9 @@ client.once(Events.ClientReady, async ready => {
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.guildId !== guildId) return;
   try {
+    if (interaction.isButton() && interaction.customId.startsWith('benny_work_')) {
+      return workSystem.handle(interaction);
+    }
     if (interaction.isStringSelectMenu() && interaction.customId === panelMenuId) {
       return openTicket(interaction, interaction.values[0]);
     }
@@ -576,5 +579,8 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.reply({ content: '❌ Wystąpił błąd. Sprawdź uprawnienia bota.', ephemeral: true }).catch(() => {});
     }
   }
+});
+client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
+  workSystem.roleChanged(oldMember, newMember).catch(error => console.error('BENNY GODZINY RANGI: ' + error.message));
 });
 client.login(token);
