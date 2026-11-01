@@ -11,11 +11,12 @@ const gradeRates = [
   ['Brygadzista',780], ['Kierownik',860], ['Dyrektor LSC',950], ['Współwłaściciel',1050], ['Właściciel',1200]
 ];
 const grades = new Map(gradeRates);
-const idFor = { start: 'benny_work_start', pause: 'benny_work_pause', stop: 'benny_work_stop', hours: 'benny_work_hours', refresh: 'benny_work_refresh' };
+const idFor = { start: 'benny_work_start', pause: 'benny_work_pause', stop: 'benny_work_stop', hours: 'benny_work_hours' };
 const statusName = { work: '🟢 W pracy', break: '🟡 Przerwa', off: '🔴 Po pracy' };
 const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
 const currency = n => Math.round(n || 0).toLocaleString('pl-PL') + ' $';
 const duration = ms => Math.floor(ms/3600000) + 'h ' + String(Math.floor((ms % 3600000)/60000)).padStart(2,'0') + 'm';
+const liveDuration = ms => [Math.floor(ms/3600000), Math.floor((ms%3600000)/60000), Math.floor((ms%60000)/1000)].map(n => String(n).padStart(2,'0')).join(':');
 const short = str => String(str || 'Pracownik').slice(0, 80);
 const ordinalWeek = time => {
   const date = new Date(fmt.format(new Date(time)) + 'T00:00:00Z');
@@ -76,35 +77,78 @@ function read() {
   return parsed;
 }
 function panelMessage(data, now = Date.now()) {
-  const working = [], breaks = [];
+  const key = ordinalWeek(now);
+  const working = [];
+  const breaks = [];
+  let totalHoursMs = 0;
+
   for (const [id, user] of Object.entries(data.users)) {
     if (user.status === 'off') continue;
-    const row = data.weeks[ordinalWeek(now)]?.users[id];
-    const ms = (row?.ms || 0) + (user.status === 'work' ? Math.max(0, now - user.since) : 0);
-    const line = '• <@' + id + '> — **' + duration(ms) + '**';
-    if (user.status === 'work') working.push(line);
-    else breaks.push(line + ' (przerwa)');
+    const row = data.weeks[key]?.users[id];
+    const elapsed = user.status === 'work' ? Math.max(0, now - (user.since || now)) : 0;
+    const ms = (row?.ms || 0) + elapsed;
+    const pay = (row?.pay || 0) + elapsed * (user.rate || 0) / 3600000;
+    const time = liveDuration(ms);
+    const role = user.grade ? short(user.grade).replace(/[*_~\`|]/g, '') : 'Pracownik';
+    const entry = '**<@' + id + '>**  ·  \`' + time + '\`\n' +
+      '↳ ' + role + '  •  ' + currency(pay) + ' w tym tygodniu';
+    if (user.status === 'work') {
+      working.push(entry);
+      totalHoursMs += ms;
+    } else {
+      breaks.push(entry);
+    }
   }
+
+  const listText = entries => {
+    if (!entries.length) return '*Brak pracowników*';
+    let text = '';
+    for (const entry of entries) {
+      const next = text ? text + '\n\n' + entry : entry;
+      if (next.length > 970) {
+        text += '\n\n*Pozostali pracownicy nie mieszczą się na liście.*';
+        break;
+      }
+      text = next;
+    }
+    return text;
+  };
+
   const embed = new EmbedBuilder()
-    .setColor(0xb61c25)
-    .setTitle('🧰 PANEL PRACY • BENNY’S MOTOR WORKS')
-    .setDescription('Zarządzaj swoim czasem pracy przyciskami poniżej.\n\n🟢 **Rozpocznij pracę** — rozpocznij lub wróć z przerwy.\n🟡 **Przerwa w pracy** — wstrzymaj licznik.\n🔴 **Zakończ pracę** — zakończ zmianę.\n📊 **Moje godziny** — sprawdź obecny tydzień i zarobki.\n🔄 **Odśwież** — zaktualizuj panel.')
-    .addFields(
-      { name: '🟢 Osoby aktywne na zmianie (' + working.length + ')', value: working.length ? working.slice(0,25).join('\n').slice(0,1000) : 'Brak pracowników na zmianie.' },
-      { name: '🟡 Osoby na przerwie (' + breaks.length + ')', value: breaks.length ? breaks.slice(0,25).join('\n').slice(0,1000) : 'Nikt nie jest na przerwie.' }
+    .setColor(0xa41920)
+    .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  /  STAFF SYSTEM' })
+    .setTitle('🔧  REJESTR CZASU PRACY')
+    .setDescription(
+      '**WARSZTAT JEST W RUCHU**\n' +
+      'Zarządzaj zmianą bez wpisywania komend. Czas pracy oraz naliczane wynagrodzenie zapisują się automatycznie.\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━\n' +
+      '🟢 **ROZPOCZNIJ PRACĘ**  —  uruchom licznik lub wróć z przerwy\n' +
+      '🟡 **PRZERWA W PRACY**  —  zatrzymaj naliczanie czasu\n' +
+      '🔴 **ZAKOŃCZ PRACĘ**  —  zapisz zmianę i zakończ\n' +
+      '📊 **MOJE GODZINY**  —  sprawdź czas i wypłatę\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━'
     )
-    .setFooter({ text: 'Benny’s Original Motor Works • Czas: Europe/Warsaw' })
+    .addFields(
+      { name: '🟢  NA STANOWISKU', value: '**' + working.length + '** pracowników', inline: true },
+      { name: '🟡  NA PRZERWIE', value: '**' + breaks.length + '** pracowników', inline: true },
+      { name: '⏱️  CZAS NA ZMIANIE', value: '**' + duration(totalHoursMs) + '**', inline: true },
+      { name: '🛠️  AKTYWNE ZMIANY', value: listText(working) },
+      { name: '☕  PRZERWY', value: listText(breaks) }
+    )
+    .setFooter({ text: 'BENNY’S • LIVE co 20 sekund  |  Europe/Warsaw  |  Przerwy nie są płatne' })
     .setTimestamp(now);
+
+  const serverIcon = guild?.iconURL({ size: 128 });
+  if (serverIcon) embed.setThumbnail(serverIcon);
+
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(idFor.start).setStyle(ButtonStyle.Success).setLabel('Rozpocznij pracę').setEmoji('🟢'),
     new ButtonBuilder().setCustomId(idFor.pause).setStyle(ButtonStyle.Secondary).setLabel('Przerwa w pracy').setEmoji('🟡'),
-    new ButtonBuilder().setCustomId(idFor.stop).setStyle(ButtonStyle.Danger).setLabel('Zakończ pracę').setEmoji('🔴')
+    new ButtonBuilder().setCustomId(idFor.stop).setStyle(ButtonStyle.Danger).setLabel('Zakończ pracę').setEmoji('🔴'),
+    new ButtonBuilder().setCustomId(idFor.hours).setStyle(ButtonStyle.Primary).setLabel('Moje godziny').setEmoji('📊')
   );
-  const buttons2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(idFor.hours).setStyle(ButtonStyle.Primary).setLabel('Moje godziny').setEmoji('📊'),
-    new ButtonBuilder().setCustomId(idFor.refresh).setStyle(ButtonStyle.Secondary).setLabel('Odśwież').setEmoji('🔄')
-  );
-  return { embeds: [embed], components: [buttons,buttons2], allowedMentions: { parse: [] } };
+
+  return { embeds: [embed], components: [buttons], allowedMentions: { parse: [] } };
 }
 function rateEmbed() {
   return new EmbedBuilder()
@@ -134,6 +178,9 @@ export function createWorkSystem(client, guildId) {
   let rateChannel;
   let inProgress = Promise.resolve();
   let tickTimer;
+  let panelMessageId;
+  let lastWeekCheck = 0;
+  let lastIdleRefresh = 0;
   const queue = fn => {
     const job = inProgress.catch(() => {}).then(fn);
     inProgress = job;
@@ -163,12 +210,26 @@ export function createWorkSystem(client, guildId) {
   }
   async function refreshPanel(force = false) {
     if (!panelChannel) return;
-    const recent = await panelChannel.messages.fetch({ limit: 100 });
-    const existing = recent.find(m => m.author.id === client.user.id && m.components.some(row => row.components.some(c => Object.values(idFor).includes(c.customId))));
+    let existing = null;
+    if (panelMessageId) {
+      existing = await panelChannel.messages.fetch(panelMessageId).catch(() => null);
+    }
+    if (!existing) {
+      const recent = await panelChannel.messages.fetch({ limit: 100 });
+      existing = recent.find(m =>
+        m.author.id === client.user.id &&
+        m.components.some(row => row.components.some(c =>
+          [idFor.start, idFor.pause, idFor.stop, idFor.hours].includes(c.customId)
+        ))
+      );
+      if (existing) panelMessageId = existing.id;
+    }
     if (existing) {
       if (force) await existing.edit(panelMessage(data));
     } else {
-      await panelChannel.send(panelMessage(data));
+      const created = await panelChannel.send(panelMessage(data));
+      panelMessageId = created.id;
+      console.log('BENNY GODZINY: utworzono panel pracy ' + panelMessageId);
     }
   }
   async function publishWeeks() {
@@ -238,12 +299,27 @@ export function createWorkSystem(client, guildId) {
     await publishWeeks();
     await refreshPanel(true);
     if (!tickTimer) {
-      tickTimer = setInterval(() => queue(async () => {
-        try {
-          await publishWeeks();
-        } catch(error) { console.error('BENNY GODZINY CRON: ' + error.stack); }
-      }), 60000);
+      lastWeekCheck = Date.now();
+      tickTimer = setInterval(() => {
+        queue(async () => {
+          try {
+            const now = Date.now();
+            if (now - lastWeekCheck >= 60000) {
+              await publishWeeks();
+              lastWeekCheck = now;
+            }
+            const hasActive = Object.values(data.users).some(u => u.status !== 'off');
+            if (hasActive || now - lastIdleRefresh >= 60000) {
+              await refreshPanel(true);
+              lastIdleRefresh = now;
+            }
+          } catch (error) {
+            console.error('BENNY GODZINY LIVE: ' + error.stack);
+          }
+        });
+      }, 20000);
       tickTimer.unref();
+      console.log('BENNY GODZINY LIVE: automatyczna aktualizacja co 20 sekund.');
     }
     console.log('BENNY GODZINY GOTOWE: ' + panelChannel.id + ' tygodniówki=' + paymentChannel.id + ' plik=' + STORE);
   }
@@ -259,11 +335,6 @@ export function createWorkSystem(client, guildId) {
       if (action === 'hours') {
         return interaction.reply({ embeds:[memberSummary(userId)], ephemeral:true });
       }
-      if (action === 'refresh') {
-        await interaction.deferReply({ephemeral:true});
-        await refreshPanel(true);
-        return interaction.editReply('🔄 Panel został odświeżony.');
-      }
       if (!rank) return interaction.reply({content:'Nie masz przypisanego stopnia Benny’s. Poproś kierownictwo o nadanie roli.',ephemeral:true});
       const user = data.users[userId] ||= { status:'off', since:now, rate:rank.rate, grade:rank.name, name:short(member.displayName) };
       settle(data,userId,now);
@@ -274,12 +345,15 @@ export function createWorkSystem(client, guildId) {
       if (action === 'start') {
         if (prior === 'work') return interaction.reply({content:'🟢 Już jesteś na zmianie.',ephemeral:true});
         user.status = 'work';
+        user.breakSince = null;
       } else if (action === 'pause') {
         if (prior !== 'work') return interaction.reply({content:'🟡 Aby rozpocząć przerwę, musisz być w pracy.',ephemeral:true});
         user.status = 'break';
+        user.breakSince = now;
       } else if (action === 'stop') {
         if (prior === 'off') return interaction.reply({content:'🔴 Nie masz aktywnej zmiany.',ephemeral:true});
         user.status = 'off';
+        user.breakSince = null;
       }
       user.since = now;
       save(data);
