@@ -86,6 +86,39 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
       ['Zarządzanie','/antyraid status • blokada • odblokuj']
     ],0x57f287);
   }
+  async function checkBannedImages(message,member) {
+    if(!contentIntent || !message.attachments?.size)return false;
+    if(member.id===member.guild.ownerId ||
+      member.roles.cache.some(r=>exempt.has(r.name)))return false;
+    let match=false;
+    for(const file of message.attachments.values()) {
+      try {
+        if(await isBlockedScreenshot(file)) {match=true;break;}
+      }catch(error) {console.error('BENNY IMAGE SCAN ERROR: '+error.message);}
+    }
+    if(!match)return false;
+    let deleted=false;
+    try {if(message.deletable){await message.delete();deleted=true;}}
+    catch(error){console.error('BENNY IMAGE DELETE ERROR: '+error.message);}
+    let timeout='Nie udało się (uprawnienia / hierarchia)';
+    if(member.moderatable) {
+      try {
+        const existingUntil=member.communicationDisabledUntilTimestamp || 0;
+        const until=Math.max(Date.now()+3600000,existingUntil);
+        await member.timeout(until-Date.now(),'Benny’s: zabroniona grafika');
+        timeout='60 minut';
+      }catch(error){timeout='Błąd: '+error.message;}
+    }
+    await log(message.guild,'🚫 AUTOMOD • BLOKADA ZDJĘCIA',[
+      ['Użytkownik','<@'+member.id+'>'],
+      ['Kanał','<#'+message.channelId+'>'],
+      ['Wiadomość usunięta',deleted?'TAK':'NIE'],
+      ['Wyciszenie',timeout],
+      ['Powód','Dopasowanie do jednego z 4 zabronionych obrazów']
+    ],0xed4245);
+    console.log('BENNY IMAGE MATCH: member='+member.id+', deleted='+deleted+', timeout='+timeout);
+    return true;
+  }
   client.on(Events.GuildMemberAdd,member=>{
     if(!config.enabled || !membersIntent || member.guild.id!==guildId || member.user.bot)return;
     const now=Date.now();joins.push(now);
@@ -99,7 +132,9 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
       cooldown.get(message.author.id)>Date.now())return;
     try {
       const m=message.member || await message.guild.members.fetch(message.author.id);
-      if(!m || m.id===m.guild.ownerId || m.permissions.has(PermissionFlagsBits.ManageMessages) ||
+      if(!m)return;
+      if(await checkBannedImages(message,m))return;
+      if(m.id===m.guild.ownerId || m.permissions.has(PermissionFlagsBits.ManageMessages) ||
         m.roles.cache.some(r=>staff.has(r.name)))return;
       const now=Date.now(), id=message.author.id, timestamps=flood.get(id)||[];
       timestamps.push(now);
@@ -134,7 +169,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
         (lockdown.get()?'<t:'+Math.floor(lockdown.get().until/1000)+':R>':'brak')+
         '**\nAutoMod: spam i ping-raid\nFale wejść: '+
         (membersIntent?'aktywne':'wymaga Server Members Intent')+
-        '\nTimeout: '+(me.permissions.has(PermissionFlagsBits.ModerateMembers)?'możliwy':'brak Moderate Members'));
+        '\nTimeout: '+(me.permissions.has(PermissionFlagsBits.ModerateMembers)?'możliwy':'brak Moderate Members')+'\nSkan zdjęć: '+(contentIntent?'AKTYWNY':'wymaga Message Content Intent'));
     } else if(action==='wlacz' || action==='wylacz') {
       config.enabled=action==='wlacz';save(config);
       await configure(i.guild);
