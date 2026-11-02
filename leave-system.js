@@ -70,42 +70,43 @@ function buttons() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(ID + 'start').setStyle(ButtonStyle.Success)
         .setEmoji('🌴').setLabel('Rozpocznij urlop'),
-      new ButtonBuilder().setCustomId(ID + 'end').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(ID + 'end').setStyle(ButtonStyle.Danger)
         .setEmoji('✅').setLabel('Zakończ urlop')
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(ID + 'absence').setStyle(ButtonStyle.Primary)
         .setEmoji('⚠️').setLabel('Zgłoś nieobecność'),
-      new ButtonBuilder().setCustomId(ID + 'reduced').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId(ID + 'reduced').setStyle(ButtonStyle.Secondary)
         .setEmoji('📉').setLabel('Mniejsza aktywność')
     )
   ];
 }
-function panel(client) {
+function panel(client, data = null) {
+  const date = today();
+  const active = (data?.records || []).filter(r =>
+    r.kind === 'vacation' && r.status !== 'ended' && r.start <= date && r.end >= date).length;
+  const upcoming = (data?.records || []).filter(r =>
+    r.kind === 'vacation' && r.status === 'planned' && r.start > date).length;
+  const logo = client.user.displayAvatarURL({ size: 256 });
   const embed = new EmbedBuilder()
-    .setColor(0xba2027)
-    .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  /  KADRY', iconURL: client.user.displayAvatarURL({ size: 128 }) })
-    .setTitle('🌴 CENTRUM URLOPÓW I DYSPOZYCYJNOŚCI')
+    .setColor(0xa61524)
+    .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  ·  STAFF PORTAL', iconURL: logo })
+    .setTitle('🌴  CENTRUM URLOPÓW')
     .setDescription(
-      '**ZARZĄDZAJ SWOJĄ OBECNOŚCIĄ W WARSZTACIE**\n' +
-      'Wybierz jedną z czterech opcji. Zgłoszenia są zapisywane i trafiają do ewidencji pracowniczej.\n\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━\n' +
-      '🌴 **ROZPOCZNIJ URLOP**\n' +
-      'Podaj termin rozpoczęcia, zakończenia i powód. Urlop może być zaplanowany na przyszłość.\n\n' +
-      '✅ **ZAKOŃCZ URLOP**\n' +
-      'Zamknij wcześniej zgłoszony urlop po potwierdzeniu.\n\n' +
-      '⚠️ **ZGŁOŚ NIEOBECNOŚĆ**\n' +
-      'Podaj daty i krótki powód nieobecności.\n\n' +
-      '📉 **MNIEJSZA AKTYWNOŚĆ**\n' +
-      'Zgłoś okres ograniczonej dyspozycyjności oraz jego przyczynę.\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━'
+      '**Twój panel dyspozycyjności w warsztacie**\n' +
+      'Zgłoś wolne, nieobecność albo ograniczoną aktywność — wszystko w jednym miejscu.\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━'
     )
-    .addFields({
-      name: '📌 JAK TO DZIAŁA?',
-      value: 'Wszystkie formularze otwierają się prywatnie. Zgłoszenia widzi ekipa na kanale pracowniczym, a dane pozostają zapisane po restarcie bota.'
-    })
-    .setThumbnail(client.user.displayAvatarURL({ size: 256 }))
-    .setFooter({ text: 'BENNY’S MOTOR WORKS • SYSTEM KADROWY' });
+    .addFields(
+      { name: '🌴  ROZPOCZNIJ URLOP', value: 'Wpisz daty i powód. W czasie urlopu otrzymasz oznaczenie **[U]** przed nickiem.', inline: false },
+      { name: '✅  ZAKOŃCZ URLOP', value: 'Wróciłeś wcześniej? Zamknij zgłoszenie, a bot przywróci Twój nick.', inline: false },
+      { name: '⚠️  ZGŁOŚ NIEOBECNOŚĆ', value: 'Poinformuj ekipę, kiedy i dlaczego Cię nie będzie.', inline: false },
+      { name: '📉  MNIEJSZA AKTYWNOŚĆ', value: 'Zgłoś okres, w którym możesz pracować rzadziej.', inline: false },
+      { name: '🟢 NA URLOPIE', value: '**' + active + '** osób', inline: true },
+      { name: '📅 ZAPLANOWANE', value: '**' + upcoming + '** zgłoszeń', inline: true }
+    )
+    .setThumbnail(logo)
+    .setFooter({ text: 'BENNY’S  •  KADRY  |  Daty według czasu polskiego' });
   return { embeds: [embed], components: buttons(), allowedMentions: { parse: [] } };
 }
 function form(kind) {
