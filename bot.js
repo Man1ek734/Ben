@@ -171,7 +171,8 @@ const sendLog = registerServerLogs(client);
 const workSystem = createWorkSystem(client, guildId);
 const leaveSystem = createLeaveSystem(client, guildId);
 const antiRaid = createAntiRaid(client, { guildId, log: sendLog,
-  membersIntent: process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true' });
+  membersIntent: process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true',
+  contentIntent: process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true' });
 let setupPromise;
 function permissionsFor(guild, roles, area, botId, locked = false) {
   const everyone = { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [] };
