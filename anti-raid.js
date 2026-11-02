@@ -30,7 +30,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false}) {
         {type:AutoModerationActionType.BlockMessage,
           metadata:{customMessage:'Benny’s Anti-Raid: wiadomość zablokowana.'}},
         {type:AutoModerationActionType.SendAlertMessage,
-          metadata:{channelId:LOG_ID}}
+          metadata:{channel:LOG_ID}}
       ];
       try {
         if(existing) {
@@ -45,7 +45,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false}) {
           });
           console.log('BENNY ANTYRAID: dodano regułę '+existing.name);
         }
-      } catch(error) { console.error('BENNY ANTYRAID RULE '+item.name+': '+error.message); }
+      } catch(error) { console.error('BENNY ANTYRAID RULE '+item.name+': '+error.message+' '+JSON.stringify(error.rawError || {})); }
     }
   }
   async function setup(server) {
