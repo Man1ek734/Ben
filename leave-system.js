@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType,
-  EmbedBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle
+  EmbedBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits
 } from 'discord.js';
 
 const STORE = process.env.LEAVE_DATA_FILE || '/data/benny-leaves.json';
@@ -309,6 +309,9 @@ export function createLeaveSystem(client, guildId) {
   }
   async function setup(guild) {
     guildRef = guild;
+    const me = await guild.members.fetchMe();
+    console.log('BENNY URLOPY NICK: ManageNicknames=' + me.permissions.has(PermissionFlagsBits.ManageNicknames) +
+      ', najwyższa rola bota=' + me.roles.highest.name + ', pozycja=' + me.roles.highest.position);
     await serialize(async () => {
       data ||= load();
       await ensurePanel(guild);
