@@ -7,6 +7,7 @@ import {
 import { registerServerLogs } from './server-logs.js';
 import { findManagedChannel, cleanupManagedDuplicates } from './channel-dedupe.js';
 import { createWorkSystem } from './work-system.js';
+import { createLeaveSystem } from './leave-system.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
@@ -127,6 +128,7 @@ const cancelButtonId = 'benny_ticket_close_cancel_v1';
 const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Sprawdź, czy bot jest online'),
   new SlashCommandBuilder().setName('pomoc').setDescription('Zobacz dostępne komendy'),
+  new SlashCommandBuilder().setName('urlop').setDescription('Otwórz panel urlopów i dyspozycyjności Benny’s'),
   new SlashCommandBuilder()
     .setName('ticket').setDescription('Otwórz prywatne zgłoszenie do mechaników')
     .addStringOption(o => o.setName('opis').setDescription('Krótki opis sprawy').setMaxLength(500).setRequired(true)),
@@ -150,6 +152,7 @@ if (process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true') baseIntents.pu
 const client = new Client({ intents: baseIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 const sendLog = registerServerLogs(client);
 const workSystem = createWorkSystem(client, guildId);
+const leaveSystem = createLeaveSystem(client, guildId);
 let setupPromise;
 function permissionsFor(guild, roles, area, botId, locked = false) {
   const everyone = { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [] };
@@ -516,6 +519,7 @@ client.once(Events.ClientReady, async ready => {
     const activeGuild = await guild.fetch();
     await runSetup(activeGuild);
     await workSystem.setup(activeGuild);
+    await leaveSystem.setup(activeGuild);
     await removeAutomaticEmbeds(activeGuild);
   } catch (error) {
     console.error('BENNY SETUP ERROR: ' + error.message);
@@ -524,6 +528,7 @@ client.once(Events.ClientReady, async ready => {
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.guildId !== guildId) return;
   try {
+    if (await leaveSystem.handle(interaction)) return;
     if (interaction.isButton() && interaction.customId.startsWith('benny_work_')) {
       return workSystem.handle(interaction);
     }
@@ -552,7 +557,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
