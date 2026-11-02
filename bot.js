@@ -47,6 +47,7 @@ const staffKeys = ranks.map(rank => rank.key);
 const managers = ['manager', 'director', 'coowner', 'owner'];
 const executives = ['director', 'coowner', 'owner'];
 const legacyMoves = {
+  '📣〢ogloszenia': ['Informacje', '💬〢ogłoszenia'],
   '⭕〢wprowadzenie': ['🏁・START', '👋・start-tutaj'],
   '📜〢zasady': ['🏁・START', '📜・regulamin'],
   '💬〢ogłoszenia': ['🏁・START', '📢・ogłoszenia'],
@@ -56,6 +57,14 @@ const legacyMoves = {
   '💵〢wynagrodzenia': ['Informacje', '💵〢tygodniówki']
 };
 const layout = [
+  {
+    name: '▶ LOBBY ◀', area: 'public', channels: [
+      ['text', '👮〢nowi', 'Powitanie nowych członków społeczności Benny’s.', 'welcome'],
+      ['text', '👮〢prosba-o-range', 'Poproś kierownictwo o przydzielenie stopnia Benny’s.'],
+      ['text', '👮〢rekrutacja', 'Informacje i rozmowy na temat rekrutacji do warsztatu.'],
+      ['text', '📣〢ogloszenia', 'Oficjalne ogłoszenia Benny’s Original Motor Works.', 'announcements']
+    ]
+  },
   {
     name: '● Zarząd-ZONE', area: 'executive', channels: [
       ['text', '📌〢ważne', 'Najważniejsze informacje zarządu.'],
@@ -85,7 +94,6 @@ const layout = [
   },
   {
     name: 'Informacje', area: 'public', channels: [
-      ['text', '💬〢ogłoszenia', 'Oficjalne wiadomości Benny’s.', 'announcements'],
       ['text', '💬〢zebrania', 'Komunikaty o zebraniach.', 'announcements', 'staff'],
       ['text', '💵〢wynagrodzenia', 'Raporty wypłat i przepracowanych godzin w każdą sobotę o 12:00.', '', 'staff'],
       ['text', '🎫〢cennik', 'Cennik usług Benny’s.', 'prices'],
@@ -114,7 +122,7 @@ const layout = [
     ]
   }
 ];
-const readOnly = new Set(['start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
+const readOnly = new Set(['welcome', 'start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
 const ticketKinds = {
   pomoc: { label: 'Pomoc ogólna', emoji: '❓', description: 'Pytania i kontakt z ekipą Benny’s', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] },
   rekrutacja: { label: 'Podanie o pracę', emoji: '📋', description: 'Rekrutacja do warsztatu', staff: ['manager', 'director', 'coowner', 'owner'] },
@@ -500,6 +508,24 @@ async function configure(guild) {
       console.log('BENNY LAYOUT: zachowano aktywny ticket ' + channel.name);
     }
   }
+  try {
+    const lobby = guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildCategory && c.name === '▶ LOBBY ◀');
+    if (lobby) {
+      if (lobby.rawPosition !== 0) await lobby.setPosition(0, 'Lobby Benny’s na samej górze');
+      const names = layout[0].channels.map(item => item[1]);
+      for (let i = 0; i < names.length; i++) {
+        const channel = guild.channels.cache.find(c =>
+          c.parentId === lobby.id && c.name === names[i]);
+        if (channel && channel.rawPosition !== i) {
+          await channel.setPosition(i, 'Ustawienie kolejności kanałów LOBBY');
+        }
+      }
+      console.log('BENNY LOBBY: kategoria na górze, kanały według wzoru');
+    }
+  } catch (error) {
+    console.error('BENNY LOBBY: nie można zmienić kolejności: ' + error.message);
+  }
   const deletedChannels = removedDuplicates;
   const deletedCategories = 0;
   console.log('BENNY DUPLIKATY GOTOWE: usunięto ' + removedDuplicates + ' zduplikowanych kanałów.');
@@ -600,6 +626,57 @@ client.on(Events.InteractionCreate, async interaction => {
     } else {
       await interaction.reply({ content: '❌ Wystąpił błąd. Sprawdź uprawnienia bota.', ephemeral: true }).catch(() => {});
     }
+  }
+});
+client.on(Events.GuildMemberAdd, async member => {
+  if (member.guild.id !== guildId) return;
+  try {
+    await member.guild.channels.fetch();
+    const category = member.guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildCategory && c.name === '▶ LOBBY ◀');
+    const channel = member.guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildText &&
+      c.parentId === category?.id &&
+      c.name.includes('nowi'));
+    if (!channel) {
+      console.error('BENNY WELCOME: brak kanału nowi w LOBBY');
+      return;
+    }
+    const rankChannel = member.guild.channels.cache.find(c =>
+      c.parentId === category.id && c.name.includes('prosba-o-range'));
+    const recruitChannel = member.guild.channels.cache.find(c =>
+      c.parentId === category.id && c.name.includes('rekrutacja'));
+    const announceChannel = member.guild.channels.cache.find(c =>
+      c.parentId === category.id && c.name.includes('ogloszenia'));
+    const logo = member.guild.iconURL({ size: 128 }) || client.user.displayAvatarURL({ size: 128 });
+    const embed = new EmbedBuilder()
+      .setColor(0xb51c25)
+      .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS • WITAMY', iconURL: logo })
+      .setTitle('🏁 WITAJ W NASZYM GARAŻU!')
+      .setDescription(
+        'Siema <@' + member.id + '>! 🚘\n\n' +
+        'Właśnie dołączyłeś do **Benny’s Original Motor Works** — miejsca, ' +
+        'gdzie liczą się dobre auta, świetna ekipa i porządny tuning. 🔧🔥\n\n' +
+        '**Rozgość się i zacznij swoją przygodę z Benny’s!**'
+      )
+      .addFields({
+        name: '📍 OD CZEGO ZACZĄĆ?',
+        value:
+          (rankChannel ? '👮 Prośba o stopień: <#' + rankChannel.id + '>\n' : '') +
+          (recruitChannel ? '📋 Rekrutacja: <#' + recruitChannel.id + '>\n' : '') +
+          (announceChannel ? '📢 Aktualności: <#' + announceChannel.id + '>' : 'Poznaj kanały serwera.')
+      })
+      .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+      .setFooter({ text: 'Benny’s Original Motor Works © 2026 • Szerokości!' })
+      .setTimestamp();
+    await channel.send({
+      content: '<@' + member.id + '>',
+      embeds: [embed],
+      allowedMentions: { users: [member.id], parse: [] }
+    });
+    console.log('BENNY WELCOME: powitano ' + member.id + ' na kanale ' + channel.id);
+  } catch (error) {
+    console.error('BENNY WELCOME ERROR: ' + error.message);
   }
 });
 client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
