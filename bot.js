@@ -47,7 +47,7 @@ const staffKeys = ranks.map(rank => rank.key);
 const managers = ['manager', 'director', 'coowner', 'owner'];
 const executives = ['director', 'coowner', 'owner'];
 const legacyMoves = {
-  '📣〢ogloszenia': ['Informacje', '💬〢ogłoszenia'],
+  '📢〢ogloszenia': ['Informacje', '💬〢ogłoszenia'],
   '⭕〢wprowadzenie': ['🏁・START', '👋・start-tutaj'],
   '📜〢zasady': ['🏁・START', '📜・regulamin'],
   '💬〢ogłoszenia': ['🏁・START', '📢・ogłoszenia'],
@@ -59,24 +59,10 @@ const legacyMoves = {
 const layout = [
   {
     name: '▶ LOBBY ◀', area: 'public', channels: [
-      ['text', '👮〢nowi', 'Powitanie nowych członków społeczności Benny’s.', 'welcome'],
-      ['text', '👮〢prosba-o-range', 'Poproś kierownictwo o przydzielenie stopnia Benny’s.'],
-      ['text', '👮〢rekrutacja', 'Informacje i rozmowy na temat rekrutacji do warsztatu.'],
-      ['text', '📣〢ogloszenia', 'Oficjalne ogłoszenia Benny’s Original Motor Works.', 'announcements']
-    ]
-  },
-  {
-    name: '● Zarząd-ZONE', area: 'executive', channels: [
-      ['text', '📌〢ważne', 'Najważniejsze informacje zarządu.'],
-      ['text', '📌〢notatnik', 'Notatki kierownictwa.'],
-      ['text', '📌〢zarzad-chat', 'Prywatny czat zarządu.'],
-      ['text', '📌〢auto-mod', 'Ustalenia dotyczące automoderacji.'],
-      ['text', '📌〢webhooki', 'Konfiguracje webhooków i integracji.'],
-      ['text', '📌〢wypłaty-firmowe', 'Wewnętrzne rozliczenia wynagrodzeń.'],
-      ['text', '📜〢pracownicy', 'Spis pracowników i przydziały.'],
-      ['text', 'reklama', 'Materiały promocyjne zatwierdzane przez zarząd.'],
-      ['text', 'zebranie', 'Organizacja zebrań zarządu.'],
-      ['text', 'csn-zarzad', 'Wewnętrzne sprawy zarządu CSN.']
+      ['text', '👋〢nowi', 'Powitanie nowych członków społeczności Benny’s.', 'welcome'],
+      ['text', '🏷️〢prosba-o-range', 'Poproś kierownictwo o przydzielenie stopnia Benny’s.'],
+      ['text', '📝〢rekrutacja', 'Informacje i rozmowy na temat rekrutacji do warsztatu.'],
+      ['text', '📢〢ogloszenia', 'Oficjalne ogłoszenia Benny’s Original Motor Works.', 'announcements']
     ]
   },
   {
@@ -120,7 +106,22 @@ const layout = [
       ['text', '👖〢ubrania', 'Ubrania i stroje pracownicze.'],
       ['text', '🪪〢csn', 'Dane identyfikacyjne pracowników.']
     ]
+  },
+  {
+    name: '● Zarząd-ZONE', area: 'executive', channels: [
+      ['text', '📌〢ważne', 'Najważniejsze informacje zarządu.'],
+      ['text', '📌〢notatnik', 'Notatki kierownictwa.'],
+      ['text', '📌〢zarzad-chat', 'Prywatny czat zarządu.'],
+      ['text', '📌〢auto-mod', 'Ustalenia dotyczące automoderacji.'],
+      ['text', '📌〢webhooki', 'Konfiguracje webhooków i integracji.'],
+      ['text', '📌〢wypłaty-firmowe', 'Wewnętrzne rozliczenia wynagrodzeń.'],
+      ['text', '📜〢pracownicy', 'Spis pracowników i przydziały.'],
+      ['text', 'reklama', 'Materiały promocyjne zatwierdzane przez zarząd.'],
+      ['text', 'zebranie', 'Organizacja zebrań zarządu.'],
+      ['text', 'csn-zarzad', 'Wewnętrzne sprawy zarządu CSN.']
+    ]
   }
+
 ];
 const readOnly = new Set(['welcome', 'start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
 const ticketKinds = {
@@ -480,6 +481,11 @@ async function configure(guild) {
       }
       if (channel) {
         usedChannelIds.add(channel.id);
+        if (channel.name !== name) {
+          const oldName = channel.name;
+          await channel.setName(name, 'Zmiana emotki kanału bez usuwania wiadomości');
+          console.log('BENNY LOBBY: przemianowano ' + oldName + ' na ' + name);
+        }
         if (!overwritesMatch(channel, overwrites)) {
           await channel.permissionOverwrites.set(overwrites, 'Uprawnienia nowego układu Benny’s');
         }
@@ -522,6 +528,20 @@ async function configure(guild) {
         }
       }
       console.log('BENNY LOBBY: kategoria na górze, kanały według wzoru');
+    }
+    await guild.channels.fetch();
+    const zarzad = guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildCategory && c.name === '● Zarząd-ZONE');
+    if (zarzad) {
+      const categories = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory);
+      const lastPosition = Math.max(0, categories.size - 1);
+      await zarzad.setPosition(lastPosition, 'Przenieś Zarząd-ZONE na sam dół listy kategorii');
+      await guild.channels.fetch();
+      const current = guild.channels.cache.get(zarzad.id);
+      const latest = [...guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).values()]
+        .sort((a, b) => a.rawPosition - b.rawPosition);
+      console.log('BENNY ZARZAD: pozycja=' + current?.rawPosition +
+        ', ostatnia kategoria=' + latest.at(-1)?.name);
     }
   } catch (error) {
     console.error('BENNY LOBBY: nie można zmienić kolejności: ' + error.message);
