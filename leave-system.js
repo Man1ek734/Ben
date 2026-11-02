@@ -162,6 +162,7 @@ function reply(content) { return { content, flags: MessageFlags.Ephemeral, allow
 export function createLeaveSystem(client, guildId) {
   let data;
   let channel;
+  let guildRef;
   let timer;
   let task = Promise.resolve();
   const serialize = fn => {
@@ -187,10 +188,11 @@ export function createLeaveSystem(client, guildId) {
       }
     }
     if (!existing) {
-      existing = await channel.send(panel(client));
+      existing = await channel.send(panel(client, data));
       console.log('BENNY URLOPY: panel opublikowany ' + existing.id);
       await existing.pin().catch(() => null);
     }
+    await existing.edit(panel(client, data));
     data.panelId = existing.id;
     data.panelChannelId = channel.id;
     save(data);
@@ -207,6 +209,70 @@ export function createLeaveSystem(client, guildId) {
       console.error('BENNY URLOPY: nie udało się wysłać raportu: ' + error.message);
     }
   }
+  async function syncVacationNickname(record) {
+    if (record.kind !== 'vacation' || (!record.nickApplied && record.status !== 'active')) return false;
+    if (!guildRef) return false;
+    let member;
+    try {
+      member = await guildRef.members.fetch({ user: record.userId, force: true });
+    } catch (error) {
+      if (error.code === 10007 || error.code === 10013) {
+        if (record.nickApplied) {
+          record.nickApplied = false;
+          record.nicknameSet = null;
+          record.originalNickname = null;
+          return true;
+        }
+        return false;
+      }
+      console.error('BENNY URLOPY NICK: nie udało się pobrać pracownika ' + record.userId + ': ' + error.message);
+      return false;
+    }
+    const during = record.status === 'active' && record.start <= today() && record.end >= today();
+    const currentNick = member.nickname;
+    const hasTag = /^\[U\]\s*/i.test(currentNick || '');
+    const changeError = message => {
+      if (record.nicknameError !== message) {
+        record.nicknameError = message;
+        console.error('BENNY URLOPY NICK: ' + member.id + ' ' + message);
+        return true;
+      }
+      return false;
+    };
+    if (during && hasTag) return false;
+    if (!during && !record.nickApplied) return false;
+    if (!member.manageable) {
+      return changeError('Brak możliwości zmiany nicku (Manage Nicknames lub hierarchia ról).');
+    }
+    try {
+      if (during) {
+        const original = currentNick ?? null;
+        const display = (currentNick || member.user.globalName || member.user.username)
+          .replace(/^\[U\]\s*/i, '');
+        const newNick = '[U] ' + Array.from(display).slice(0, 28).join('');
+        await member.setNickname(newNick, 'Benny’s: rozpoczęcie urlopu');
+        record.originalNickname = original;
+        record.nicknameSet = newNick;
+        record.nickApplied = true;
+        delete record.nicknameError;
+        console.log('BENNY URLOPY NICK: dodano [U] do nicku ' + member.id);
+        return true;
+      }
+      const restore = hasTag ?
+        (currentNick === record.nicknameSet ? (record.originalNickname ?? null)
+          : currentNick.replace(/^\[U\]\s*/i, '') || null) : currentNick;
+      if (hasTag) await member.setNickname(restore, 'Benny’s: zakończenie urlopu');
+      record.nickApplied = false;
+      record.originalNickname = null;
+      record.nicknameSet = null;
+      delete record.nicknameError;
+      console.log('BENNY URLOPY NICK: usunięto [U] dla ' + member.id);
+      return true;
+    } catch (error) {
+      return changeError('Discord odmówił zmiany nicku: ' + error.message);
+    }
+  }
+
   async function sweep() {
     if (!data) return;
     const current = today();
@@ -262,7 +328,7 @@ export function createLeaveSystem(client, guildId) {
         await interaction.reply(reply('System urlopów jeszcze się uruchamia. Spróbuj ponownie.'));
         return true;
       }
-      await interaction.reply({ ...panel(client), flags: MessageFlags.Ephemeral });
+      await interaction.reply({ ...panel(client, data), flags: MessageFlags.Ephemeral });
       return true;
     }
     if (isButton) {
