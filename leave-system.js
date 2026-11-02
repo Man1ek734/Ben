@@ -242,7 +242,18 @@ export function createLeaveSystem(client, guildId) {
     if (during && hasTag) return false;
     if (!during && !record.nickApplied) return false;
     if (!member.manageable) {
-      return changeError('Brak możliwości zmiany nicku (Manage Nicknames lub hierarchia ról).');
+      const botMember = await guildRef.members.fetchMe();
+      const isOwner = member.id === guildRef.ownerId;
+      const hasPermission = botMember.permissions.has(PermissionFlagsBits.ManageNicknames);
+      const block = isOwner
+        ? 'Discord zabrania botom zmieniać nick właściciela serwera. Ustaw [U] ręcznie w swoim profilu serwera.'
+        : !hasPermission
+          ? 'Botowi brakuje uprawnienia Zarządzanie pseudonimami (Manage Nicknames).'
+          : 'Rola bota musi znajdować się powyżej najwyższej roli pracownika w Ustawienia serwera → Role.';
+      console.log('BENNY URLOPY NICK DIAG: owner=' + isOwner + ', botManageNicknames=' + hasPermission +
+        ', botTopPosition=' + botMember.roles.highest.position +
+        ', memberTopPosition=' + member.roles.highest.position);
+      return changeError(block);
     }
     try {
       if (during) {
@@ -384,8 +395,8 @@ export function createLeaveSystem(client, guildId) {
           save(data);
           await interaction.update({
             content: record.nickApplied
-              ? '✅ Urlop zakończony. ⚠️ Bot nie mógł usunąć [U] z nicku — sprawdź uprawnienia.'
-              : '✅ Urlop zakończony. Oznaczenie [U] zostało usunięte.',
+              ? '✅ Urlop zakończony. ⚠️ ' + (record.nicknameError || 'Bot nie może usunąć oznaczenia [U].')
+              : '✅ Urlop zakończony. Jeśli na nicku było automatyczne [U], zostało usunięte. Jeśli dodałeś je sam, usuń je ręcznie.',
             components: []
           });
           await sendReport(record, 'closed');
@@ -445,7 +456,7 @@ export function createLeaveSystem(client, guildId) {
         displayDate(start) + ' – ' + displayDate(end) + '**.' +
         (kind === 'vacation' && record.status === 'active'
           ? (record.nickApplied ? ' 🌴 Nick oznaczony **[U]**.' :
-            ' ⚠️ Nie udało się ustawić **[U]** (sprawdź uprawnienie bota do zmiany nicków).')
+            ' ⚠️ Nie udało się ustawić **[U]**: ' + (record.nicknameError || 'brak odpowiednich uprawnień').slice(0, 300))
           : kind === 'vacation' ? ' 🌴 **[U]** pojawi się w dniu rozpoczęcia urlopu.' : '') +
         ' Szczegóły: <#' + channel.id + '>.');
     });
