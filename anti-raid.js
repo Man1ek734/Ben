@@ -3,18 +3,25 @@ import { Events, PermissionFlagsBits, MessageFlags,
   AutoModerationRuleEventType, AutoModerationRuleTriggerType,
   AutoModerationActionType } from 'discord.js';
 import { createRaidLock } from './raid-lockdown.js';
+import { isBlockedScreenshot } from './image-guard.js';
 
 const CONF='/data/benny-antiraid.json';
 const LOG_ID='1566480686351650837';
 const RULES=[
   { name:'BENNY | Ochrona przed spamem', triggerType:AutoModerationRuleTriggerType.Spam },
   { name:'BENNY | Ochrona przed ping-raidem', triggerType:AutoModerationRuleTriggerType.MentionSpam,
-    triggerMetadata:{mentionTotalLimit:6,mentionRaidProtectionEnabled:true} }
+    triggerMetadata:{mentionTotalLimit:6,mentionRaidProtectionEnabled:true} },
+  { name:'BENNY | Blokada linkow',triggerType:AutoModerationRuleTriggerType.Keyword,
+    triggerMetadata:{regexPatterns:[
+      '(?i)(?:https?://|www\\.)[^\\s<>()]+',
+      '(?i)\\b[a-z0-9-]{2,}\\.(?:com|net|org|pl|gg|io|co|xyz|cc|app|dev|me|site|online|live|store|shop|link|top|ru|uk|eu|tv|info|biz|to|pro|cloud)\\b'
+    ]}}
 ];
 const staff=new Set(['Dyrektor LSC','Współwłaściciel','Właściciel','Kierownik']);
+const exempt=new Set(['Właściciel','Współwłaściciel','Zastępca Właściciela','.']);
 const load=()=>fs.existsSync(CONF)?JSON.parse(fs.readFileSync(CONF,'utf8')):{enabled:true};
 const save=v=>{fs.mkdirSync('/data',{recursive:true});fs.writeFileSync(CONF,JSON.stringify(v));};
-export function createAntiRaid(client,{guildId,log,membersIntent=false}) {
+export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIntent=false}) {
   const config=load(), lockdown=createRaidLock(log);
   let guild,timer;
   const joins=[],flood=new Map(),cooldown=new Map();
@@ -26,21 +33,27 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false}) {
         console.log('BENNY ANTYRAID: Discord ma już regułę dla '+item.name);
         continue;
       }
+      const links=item.triggerType===AutoModerationRuleTriggerType.Keyword;
+      const exemptRoles=server.roles.cache.filter(r=>(links?exempt:staff).has(r.name)).map(r=>r.id);
       const actions=[
         {type:AutoModerationActionType.BlockMessage,
-          metadata:{customMessage:'Benny’s Anti-Raid: wiadomość zablokowana.'}},
-        {type:AutoModerationActionType.SendAlertMessage,
-          metadata:{channel:LOG_ID}}
+          metadata:{customMessage:links?'Benny’s: linki są zabronione. Wyciszenie 5 minut.':
+            'Benny’s Anti-Raid: wiadomość zablokowana.'}},
+        {type:AutoModerationActionType.SendAlertMessage,metadata:{channel:LOG_ID}},
+        ...(links?[{type:AutoModerationActionType.Timeout,metadata:{durationSeconds:300}}]:[])
       ];
       try {
         if(existing) {
-          if(existing.enabled!==config.enabled) await existing.setEnabled(config.enabled);
+          if(links) {
+            await existing.edit({actions,triggerMetadata:item.triggerMetadata,
+              exemptRoles,enabled:config.enabled,reason:'Benny’s: aktualizacja reguły linków'});
+          } else if(existing.enabled!==config.enabled) await existing.setEnabled(config.enabled);
         } else {
           existing=await server.autoModerationRules.create({
             name:item.name,eventType:AutoModerationRuleEventType.MessageSend,
             triggerType:item.triggerType,triggerMetadata:item.triggerMetadata,
             actions,enabled:config.enabled,
-            exemptRoles:server.roles.cache.filter(r=>staff.has(r.name)).map(r=>r.id),
+            exemptRoles,
             reason:'Benny’s: automatyczna ochrona Anti-Raid'
           });
           console.log('BENNY ANTYRAID: dodano regułę '+existing.name);
@@ -62,11 +75,13 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false}) {
       timer.unref();
     }
     console.log('BENNY ANTYRAID GOTOWE: enabled='+config.enabled+
-      ', membersIntent='+membersIntent+', moderateMembers='+me.permissions.has(PermissionFlagsBits.ModerateMembers));
+      ', membersIntent='+membersIntent+', contentIntent='+contentIntent+', moderateMembers='+me.permissions.has(PermissionFlagsBits.ModerateMembers));
     await log(server,'🛡️ ANTI-RAID • OCHRONA SERWERA',[
       ['Stan',config.enabled?'Włączona':'Wyłączona'],
       ['AutoMod','Spam oraz masowe oznaczanie'],
       ['Spam ilościowy','9 wiadomości / 8 sekund → timeout 10 minut'],
+      ['Linki','Blokada i 5 minut mute (wyjątki: Właściciel, Współwłaściciel, .)'],
+      ['Zabronione grafiki',contentIntent?'4 zdjęcia → usunięcie i mute 60 minut':'Wymaga Message Content Intent'],
       ['Fala wejść',membersIntent?'8 osób / 30 s → blokada 5 minut':'Wymaga Server Members Intent'],
       ['Zarządzanie','/antyraid status • blokada • odblokuj']
     ],0x57f287);
