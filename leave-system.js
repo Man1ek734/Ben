@@ -279,9 +279,9 @@ export function createLeaveSystem(client, guildId) {
     let changed = false;
     const alerts = [];
     for (const record of data.records) {
-      if (record.kind !== 'vacation' || record.status === 'ended') continue;
+      if (record.kind !== 'vacation') continue;
       if (record.status === 'planned' && record.start <= current) {
-        record.status = 'active';
+        record.status = current > record.end ? 'ended' : 'active';
         record.updatedAt = new Date().toISOString();
         changed = true;
         alerts.push(record);
@@ -292,11 +292,23 @@ export function createLeaveSystem(client, guildId) {
         changed = true;
         alerts.push(record);
       }
+      if (await syncVacationNickname(record)) {
+        changed = true;
+        save(data);
+      }
     }
-    if (changed) save(data);
+    if (changed) {
+      save(data);
+      if (data.panelId && channel) {
+        const message = await channel.messages.fetch(data.panelId).catch(() => null);
+        if (message) await message.edit(panel(client, data)).catch(error =>
+          console.error('BENNY URLOPY: aktualizacja panelu: ' + error.message));
+      }
+    }
     for (const record of alerts) await sendReport(record, record.status === 'ended' ? 'closed' : 'active');
   }
   async function setup(guild) {
+    guildRef = guild;
     await serialize(async () => {
       data ||= load();
       await ensurePanel(guild);
@@ -304,7 +316,7 @@ export function createLeaveSystem(client, guildId) {
     });
     if (!timer) {
       timer = setInterval(() => serialize(() => sweep()).catch(error =>
-        console.error('BENNY URLOPY: harmonogram ' + error.stack)), 5 * 60000);
+        console.error('BENNY URLOPY: harmonogram ' + error.stack)), 60000);
       timer.unref();
     }
     console.log('BENNY URLOPY GOTOWE: panel=' + data.panelId + ', kanał=' + channel.id +
@@ -365,7 +377,14 @@ export function createLeaveSystem(client, guildId) {
           record.updatedAt = new Date().toISOString();
           record.endedEarlyAt = record.updatedAt;
           save(data);
-          await interaction.update({ content: '✅ Urlop został zakończony i zapisany w ewidencji.', components: [] });
+          await syncVacationNickname(record);
+          save(data);
+          await interaction.update({
+            content: record.nickApplied
+              ? '✅ Urlop zakończony. ⚠️ Bot nie mógł usunąć [U] z nicku — sprawdź uprawnienia.'
+              : '✅ Urlop zakończony. Oznaczenie [U] zostało usunięte.',
+            components: []
+          });
           await sendReport(record, 'closed');
           console.log('BENNY URLOPY: zamknięto urlop ' + record.id);
         });
@@ -409,10 +428,23 @@ export function createLeaveSystem(client, guildId) {
       };
       data.records.push(record);
       save(data);
+      if (record.kind === 'vacation' && record.status === 'active') {
+        await syncVacationNickname(record);
+        save(data);
+      }
       await sendReport(record);
+      if (data.panelId && channel) {
+        const message = await channel.messages.fetch(data.panelId).catch(() => null);
+        if (message) await message.edit(panel(client, data)).catch(() => {});
+      }
       console.log('BENNY URLOPY: zapisano ' + kind + ' użytkownika ' + interaction.user.id);
       await interaction.editReply('✅ Zgłoszenie **' + kinds[kind].display + '** zapisane. Okres: **' +
-        displayDate(start) + ' – ' + displayDate(end) + '**. Szczegóły znajdziesz na kanale <#' + channel.id + '>.');
+        displayDate(start) + ' – ' + displayDate(end) + '**.' +
+        (kind === 'vacation' && record.status === 'active'
+          ? (record.nickApplied ? ' 🌴 Nick oznaczony **[U]**.' :
+            ' ⚠️ Nie udało się ustawić **[U]** (sprawdź uprawnienie bota do zmiany nicków).')
+          : kind === 'vacation' ? ' 🌴 **[U]** pojawi się w dniu rozpoczęcia urlopu.' : '') +
+        ' Szczegóły: <#' + channel.id + '>.');
     });
     return true;
   }
