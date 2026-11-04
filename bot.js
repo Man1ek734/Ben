@@ -457,6 +457,37 @@ async function configure(guild) {
   } catch (error) {
     console.error('BENNY RANKS: błąd zmiany kolejności: ' + error.message + ' status=' + error.status + ' code=' + error.code + ' detail=' + JSON.stringify(error.rawError || {}));
   }
+  try {
+    await guild.roles.fetch();
+    const self = await guild.members.fetchMe();
+    let opiekun = guild.roles.cache.find(role => role.name === 'Opiekun Firm');
+    if (!opiekun) {
+      opiekun = await guild.roles.create({
+        name: 'Opiekun Firm',
+        color: 0x9b59b6,
+        permissions: 0n,
+        hoist: true,
+        mentionable: false,
+        reason: 'Dodanie rangi Opiekun Firm na prośbę właściciela'
+      });
+      madeRoles++;
+      console.log('BENNY OPIEKUN FIRM: utworzono rolę ' + opiekun.id);
+    }
+    await guild.roles.fetch();
+    opiekun = guild.roles.cache.get(opiekun.id);
+    const maximum = self.roles.highest.position - 1;
+    if (opiekun.editable && maximum > 0 && opiekun.position !== maximum) {
+      await opiekun.setPosition(maximum, 'Opiekun Firm najwyżej, ponad Właścicielem');
+      await guild.roles.fetch();
+      opiekun = guild.roles.cache.get(opiekun.id);
+    }
+    console.log('BENNY OPIEKUN FIRM: rola=' + opiekun.name +
+      ', pozycja=' + opiekun.position +
+      ', rola bota=' + self.roles.highest.name +
+      ', pozycja bota=' + self.roles.highest.position);
+  } catch (error) {
+    console.error('BENNY OPIEKUN FIRM: nie udało się ustawić roli: ' + error.message);
+  }
   for (const section of layout) {
     let category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === section.name);
     if (!category) {
