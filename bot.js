@@ -500,14 +500,31 @@ async function configure(guild) {
       console.error('BENNY MEMBERS SEARCH: failed status=' + searchError.status +
         ' code=' + searchError.code + ' message=' + searchError.message);
       try {
-        const test = await client.rest.get('/guilds/' + guild.id + '/members/search', {
-          query: new URLSearchParams({ query: 'a', limit: '100' })
-        });
-        console.log('BENNY MEMBERS SEARCH: nonempty query works=' +
-          Array.isArray(test) + ' results=' + (Array.isArray(test) ? test.length : 0));
+        const prefixes = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('')
+          .concat(['ą','ć','ę','ł','ń','ó','ś','ź','ż','_','.','[','-','!','・','@','💎','👑']);
+        const found = new Map();
+        let errors = 0;
+        found.set(client.user.id, {user: {id:client.user.id},roles:[]});
+        for (const prefix of prefixes) {
+          try {
+            const items = await client.rest.get('/guilds/' + guild.id + '/members/search', {
+              query: new URLSearchParams({ query: prefix, limit: '100' })
+            });
+            for (const item of Array.isArray(items) ? items : []) {
+              if (item.user?.id) found.set(item.user.id, item);
+            }
+            if (found.size >= guild.memberCount) break;
+          } catch (e) { errors++; }
+        }
+        const roleCounts = duplicatesFound.map(group => group.map(role => ({
+          name:role.name,id:role.id,
+          users:[...found.values()].filter(member=>(member.roles||[]).includes(role.id)).length
+        })));
+        console.log('BENNY MEMBERS SEARCH COMPLETE: found=' + found.size +
+          ' total=' + guild.memberCount + ' errors=' + errors +
+          ' roleCounts=' + JSON.stringify(roleCounts));
       } catch (testError) {
-        console.error('BENNY MEMBERS SEARCH: nonempty failed status=' +
-          testError.status + ' code=' + testError.code + ' message=' + testError.message);
+        console.error('BENNY MEMBERS SEARCH: comprehensive failed: ' + testError.message);
       }
     }
   }
