@@ -45,7 +45,7 @@ function daySpan(start, end) {
   return Math.round((Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 86400000) + 1;
 }
 function hasRank(member) {
-  return member.roles.cache.some(role => rankNames.includes(role.name));
+  return member.roles.cache.some(role => rankNames.includes(role.name.replace(/^・/, '')));
 }
 function load() {
   try {
