@@ -195,9 +195,9 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       .setDescription(
         '**' + clean(member.displayName) + '** ' +
         (isDegrad ? 'zostaje przeniesiony na niższy stopień służbowy.' :
-          'awansuje na kolejny stopień!') + '\\n' +
+          'awansuje na kolejny stopień!') + '\n' +
         (isDegrad ? 'Decyzja kierownictwa Benny’s Original Motor Works.' :
-          'Doceniamy zaangażowanie i pracę na rzecz warsztatu.\\n\\n' +
+          'Doceniamy zaangażowanie i pracę na rzecz warsztatu.\n\n' +
           '**Gratulujemy i życzymy dalszych sukcesów!**')
       )
       .addFields(
