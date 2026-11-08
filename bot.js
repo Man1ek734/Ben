@@ -432,6 +432,36 @@ async function configure(guild) {
   }
   await guild.roles.fetch();
   await guild.channels.fetch();
+  const normalRoleName = name => String(name || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('pl-PL')
+    .replace(/[\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]/gu, '')
+    .replace(/[^\\p{L}\\p{N}]+/gu, '');
+  const roleGroups = new Map();
+  for (const role of guild.roles.cache.values()) {
+    if (role.id === guild.id || role.managed) continue;
+    const key = normalRoleName(role.name);
+    if (!key) continue;
+    if (!roleGroups.has(key)) roleGroups.set(key, []);
+    roleGroups.get(key).push(role);
+  }
+  const duplicatesFound = [...roleGroups.values()]
+    .filter(group => group.length > 1)
+    .map(group => group.sort((a, b) => b.position - a.position).map(role => ({
+      name: role.name,
+      id: role.id,
+      position: role.position,
+      cachedMembers: role.members.size,
+      overwriteChannels: guild.channels.cache
+        .filter(c => c.permissionOverwrites?.cache?.has(role.id)).size,
+      editable: role.editable,
+      permissions: role.permissions.bitfield.toString()
+    })));
+  console.log('BENNY ROLE DUPLICATE AUDIT: ' + JSON.stringify(duplicatesFound));
+  console.log('BENNY ROLE INVENTORY: ' + JSON.stringify(
+    [...guild.roles.cache.values()].filter(r => r.id !== guild.id && !r.managed)
+      .sort((a,b)=>b.position-a.position).map(r=>({name:r.name,id:r.id,position:r.position}))
+  ));
   const roles = {};
   let madeRoles = 0;
   let madeCategories = 0;
