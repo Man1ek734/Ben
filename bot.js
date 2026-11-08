@@ -499,6 +499,16 @@ async function configure(guild) {
     } catch (searchError) {
       console.error('BENNY MEMBERS SEARCH: failed status=' + searchError.status +
         ' code=' + searchError.code + ' message=' + searchError.message);
+      try {
+        const test = await client.rest.get('/guilds/' + guild.id + '/members/search', {
+          query: new URLSearchParams({ query: 'a', limit: '100' })
+        });
+        console.log('BENNY MEMBERS SEARCH: nonempty query works=' +
+          Array.isArray(test) + ' results=' + (Array.isArray(test) ? test.length : 0));
+      } catch (testError) {
+        console.error('BENNY MEMBERS SEARCH: nonempty failed status=' +
+          testError.status + ' code=' + testError.code + ' message=' + testError.message);
+      }
     }
   }
   const roles = {};
