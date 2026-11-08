@@ -613,6 +613,15 @@ client.once(Events.ClientReady, async ready => {
   try {
     const guild = await client.guilds.fetch(guildId);
     const activeGuild = await guild.fetch();
+    await activeGuild.channels.fetch();
+    for (const id of ['1566809429985329404', '1566803396881551431']) {
+      const channel = activeGuild.channels.cache.get(id);
+      const parent = channel?.parentId && activeGuild.channels.cache.get(channel.parentId);
+      console.log('BENNY KANAL ID AUDIT: ' + JSON.stringify({
+        id, exists: !!channel, name: channel?.name || null,
+        parent: parent?.name || null, type: channel?.type ?? null
+      }));
+    }
     await runSetup(activeGuild);
     await activeGuild.roles.fetch();
     console.log('BENNY AUTOROLA: wymagany Server Members Intent=' +
