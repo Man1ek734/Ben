@@ -9,6 +9,7 @@ import { findManagedChannel, cleanupManagedDuplicates } from './channel-dedupe.j
 import { createWorkSystem } from './work-system.js';
 import { createLeaveSystem } from './leave-system.js';
 import { createAntiRaid } from './anti-raid.js';
+import { cleanDuplicatedRanks } from './rank-deduper.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
@@ -432,109 +433,14 @@ async function configure(guild) {
   }
   await guild.roles.fetch();
   await guild.channels.fetch();
-  const normalRoleName = name => [...String(name || '').normalize('NFKC').toLocaleLowerCase('pl-PL')]
-    .filter(char => /[\p{L}\p{N}]/u.test(char)).join('');
-  const roleGroups = new Map();
-  for (const role of guild.roles.cache.values()) {
-    if (role.id === guild.id || role.managed) continue;
-    const key = normalRoleName(role.name);
-    if (!key) continue;
-    if (!roleGroups.has(key)) roleGroups.set(key, []);
-    roleGroups.get(key).push(role);
-  }
-  const duplicatesFound = [...roleGroups.values()]
-    .filter(group => group.length > 1)
-    .map(group => group.sort((a, b) => b.position - a.position).map(role => ({
-      name: role.name,
-      id: role.id,
-      position: role.position,
-      cachedMembers: role.members.size,
-      overwriteChannels: guild.channels.cache
-        .filter(c => c.permissionOverwrites?.cache?.has(role.id)).size,
-      editable: role.editable,
-      permissions: role.permissions.bitfield.toString()
-    })));
-  console.log('BENNY ROLE DUPLICATE AUDIT: ' + JSON.stringify(duplicatesFound));
-  console.log('BENNY ROLE INVENTORY: ' + JSON.stringify(
-    [...guild.roles.cache.values()].filter(r => r.id !== guild.id && !r.managed)
-      .sort((a,b)=>b.position-a.position).map(r=>({name:r.name,id:r.id,position:r.position}))
-  ));
-  try {
-    const cachedMembers = guild.members.cache;
-    console.log('BENNY MEMBERS DIAGNOSTIC: cache=' + cachedMembers.size + ', memberCount=' + guild.memberCount);
-    const members = [];
-    let after = '0';
-    for (let page = 0; page < 5; page++) {
-      const batch = await client.rest.get(Routes.guildMembers(guild.id), {
-        query: new URLSearchParams({ limit: '1000', after })
-      });
-      if (!Array.isArray(batch)) break;
-      members.push(...batch);
-      if (batch.length < 1000) break;
-      after = batch[batch.length - 1]?.user?.id;
-      if (!after) break;
-    }
-    const roleCounts = new Map();
-    for (const member of members) {
-      for (const id of member.roles || []) roleCounts.set(id, (roleCounts.get(id) || 0) + 1);
-    }
-    console.log('BENNY MEMBERS DIAGNOSTIC: rest list=' + members.length +
-      ', role_counts=' + JSON.stringify(duplicatesFound.map(group =>
-        group.map(role => ({name:role.name,id:role.id,restMembers:roleCounts.get(role.id)||0})))));
-  } catch (error) {
-    console.error('BENNY MEMBERS DIAGNOSTIC: REST list failed status=' + error.status +
-      ' code=' + error.code + ' message=' + error.message);
-    try {
-      const result = await client.rest.get('/guilds/' + guild.id + '/members/search', {
-        query: new URLSearchParams({ query: '', limit: '1000' })
-      });
-      const matches = Array.isArray(result) ? result : [];
-      const counts = new Map();
-      for (const member of matches) {
-        for (const id of member.roles || []) counts.set(id, (counts.get(id) || 0) + 1);
-      }
-      console.log('BENNY MEMBERS SEARCH: count=' + matches.length + ', memberCount=' + guild.memberCount +
-        ', roleCounts=' + JSON.stringify(duplicatesFound.map(group =>
-          group.map(role => ({ id: role.id, count: counts.get(role.id) || 0 })))));
-    } catch (searchError) {
-      console.error('BENNY MEMBERS SEARCH: failed status=' + searchError.status +
-        ' code=' + searchError.code + ' message=' + searchError.message);
-      try {
-        const prefixes = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('')
-          .concat(['ą','ć','ę','ł','ń','ó','ś','ź','ż','_','.','[','-','!','・','@','💎','👑']);
-        const found = new Map();
-        let errors = 0;
-        found.set(client.user.id, {user: {id:client.user.id},roles:[]});
-        for (const prefix of prefixes) {
-          try {
-            const items = await client.rest.get('/guilds/' + guild.id + '/members/search', {
-              query: new URLSearchParams({ query: prefix, limit: '100' })
-            });
-            for (const item of Array.isArray(items) ? items : []) {
-              if (item.user?.id) found.set(item.user.id, item);
-            }
-            if (found.size >= guild.memberCount) break;
-          } catch (e) { errors++; }
-        }
-        const roleCounts = duplicatesFound.map(group => group.map(role => ({
-          name:role.name,id:role.id,
-          users:[...found.values()].filter(member=>(member.roles||[]).includes(role.id)).length
-        })));
-        console.log('BENNY MEMBERS SEARCH COMPLETE: found=' + found.size +
-          ' total=' + guild.memberCount + ' errors=' + errors +
-          ' roleCounts=' + JSON.stringify(roleCounts));
-      } catch (testError) {
-        console.error('BENNY MEMBERS SEARCH: comprehensive failed: ' + testError.message);
-      }
-    }
-  }
   const roles = {};
   let madeRoles = 0;
   let madeCategories = 0;
   let madeChannels = 0;
   let removedDuplicates = 0;
   for (const spec of ranks) {
-    const role = guild.roles.cache.find(role => role.name === spec.name);
+    const role = guild.roles.cache.find(role => role.name === '・' + spec.name) ||
+      guild.roles.cache.find(role => role.name === spec.name);
     if (role) {
       roles[spec.key] = role;
     } else {
@@ -542,7 +448,8 @@ async function configure(guild) {
         ' nie istnieje i nie zostanie utworzony ponownie.');
     }
   }
-  const opiekun = guild.roles.cache.find(role => role.name === 'Opiekun Firm');
+  const opiekun = guild.roles.cache.find(role => role.name === '・Opiekun Firm') ||
+    guild.roles.cache.find(role => role.name === 'Opiekun Firm');
   if (opiekun) roles.opiekunFirm = opiekun;
   else console.log('BENNY ROLE PRESERVE: rola Opiekun Firm nie istnieje i nie zostanie odtworzona.');
   console.log('BENNY ROLE PRESERVE: aktywne stopnie=' +
@@ -607,6 +514,11 @@ async function configure(guild) {
     } catch (error) {
       console.error('BENNY DUPLIKATY: problem w kategorii ' + category.name + ': ' + error.message);
     }
+  }
+  try {
+    await cleanDuplicatedRanks(guild, [...ranks.map(rank => rank.name), 'Opiekun Firm']);
+  } catch (error) {
+    console.error('BENNY ROLE CLEANUP ERROR: ' + error.message);
   }
   let checkedEmployeePermissions = 0;
   let missingEmployeePermissions = 0;
