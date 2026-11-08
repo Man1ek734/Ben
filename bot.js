@@ -432,11 +432,8 @@ async function configure(guild) {
   }
   await guild.roles.fetch();
   await guild.channels.fetch();
-  const normalRoleName = name => String(name || '')
-    .normalize('NFKC')
-    .toLocaleLowerCase('pl-PL')
-    .replace(/[\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]/gu, '')
-    .replace(/[^\\p{L}\\p{N}]+/gu, '');
+  const normalRoleName = name => [...String(name || '').normalize('NFKC').toLocaleLowerCase('pl-PL')]
+    .filter(char => /[\p{L}\p{N}]/u.test(char)).join('');
   const roleGroups = new Map();
   for (const role of guild.roles.cache.values()) {
     if (role.id === guild.id || role.managed) continue;
@@ -462,6 +459,32 @@ async function configure(guild) {
     [...guild.roles.cache.values()].filter(r => r.id !== guild.id && !r.managed)
       .sort((a,b)=>b.position-a.position).map(r=>({name:r.name,id:r.id,position:r.position}))
   ));
+  try {
+    const cachedMembers = guild.members.cache;
+    console.log('BENNY MEMBERS DIAGNOSTIC: cache=' + cachedMembers.size + ', memberCount=' + guild.memberCount);
+    const members = [];
+    let after = '0';
+    for (let page = 0; page < 5; page++) {
+      const batch = await client.rest.get(Routes.guildMembers(guild.id), {
+        query: new URLSearchParams({ limit: '1000', after })
+      });
+      if (!Array.isArray(batch)) break;
+      members.push(...batch);
+      if (batch.length < 1000) break;
+      after = batch[batch.length - 1]?.user?.id;
+      if (!after) break;
+    }
+    const roleCounts = new Map();
+    for (const member of members) {
+      for (const id of member.roles || []) roleCounts.set(id, (roleCounts.get(id) || 0) + 1);
+    }
+    console.log('BENNY MEMBERS DIAGNOSTIC: rest list=' + members.length +
+      ', role_counts=' + JSON.stringify(duplicatesFound.map(group =>
+        group.map(role => ({name:role.name,id:role.id,restMembers:roleCounts.get(role.id)||0})))));
+  } catch (error) {
+    console.error('BENNY MEMBERS DIAGNOSTIC: REST list failed status=' + error.status +
+      ' code=' + error.code + ' message=' + error.message);
+  }
   const roles = {};
   let madeRoles = 0;
   let madeCategories = 0;
