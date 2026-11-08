@@ -9,7 +9,9 @@ const THEME = {
   kicked: 0xffa53d,
   banned: 0xf03e56,
   muted: 0xf2b84a,
-  unmuted: 0x3db9d4
+  unmuted: 0x3db9d4,
+  roleAdded: 0x55c9f0,
+  roleRemoved: 0xfa799d
 };
 const MAX_CONTENT = 950;
 const LIMIT_MS = 15000;
@@ -126,6 +128,33 @@ export function registerServerLogs(client) {
         ], user);
   };
 
+  const roleChanges = (guild, entry) => {
+    const memberId = auditUser(entry);
+    if (!memberId) return;
+    const groups = [
+      { key: '$add', type: 'roleAdded', title: '✨  NADANO ROLĘ',
+        description: 'Użytkownikowi przypisano nową rolę na serwerze.' },
+      { key: '$remove', type: 'roleRemoved', title: '➖  ODEBRANO ROLĘ',
+        description: 'Użytkownikowi usunięto przypisaną wcześniej rolę.' }
+    ];
+    const results = [];
+    for (const group of groups) {
+      const changed = entry.changes?.filter(change => change.key === group.key) || [];
+      const roles = changed.flatMap(change => Array.isArray(change.new) ? change.new : []);
+      if (!roles.length || !once('role:' + entry.id + ':' + group.key, 60000)) continue;
+      const list = roles.map(role => role.id ? '<@&' + role.id + '>' : trim(role.name || 'Nieznana rola', 120))
+        .join('\n');
+      results.push(note(guild, group.type, group.title, group.description, [
+        ['👤 Użytkownik', mention(memberId)],
+        ['🎭 Rola', trim(list, 950)],
+        ['🛡️ Nadał / odebrał', moderatorField(entry)],
+        ['📝 Powód', reasonField(entry)],
+        ['🕒 Data zdarzenia', occurredAt(entry.createdTimestamp || Date.now())]
+      ], subject(entry), entry.createdTimestamp || Date.now()));
+    }
+    return Promise.all(results);
+  };
+
   event(Events.ClientReady, async () => {
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.roles.fetch();
@@ -143,7 +172,7 @@ export function registerServerLogs(client) {
         ViewChannel: true, ReadMessageHistory: true
       }).catch(error => console.error('BENNY LOGI ROLA ' + name + ': ' + error.message));
     }
-    console.log('BENNY LOGI GOTOWE: tylko wiadomości usunięte / wejścia / wyjścia / kick / ban / mute, kanał=' + LOG_CHANNEL_ID);
+    console.log('BENNY LOGI GOTOWE: tylko wiadomości usunięte / wejścia / wyjścia / kick / ban / mute / role, kanał=' + LOG_CHANNEL_ID);
   });
 
   event(Events.MessageDelete, message => {
@@ -240,6 +269,7 @@ export function registerServerLogs(client) {
     const id = auditUser(entry);
     if (entry.action === AuditLogEvent.MemberKick) return handleKick(guild, entry);
     if (entry.action === AuditLogEvent.MemberBanAdd) return handleBan(guild, entry);
+    if (entry.action === AuditLogEvent.MemberRoleUpdate) return roleChanges(guild, entry);
     if (entry.action !== AuditLogEvent.MemberUpdate || !id) return;
     const change = entry.changes?.find(item =>
       item.key === 'communication_disabled_until' || item.key === 'communicationDisabledUntil');
@@ -247,7 +277,5 @@ export function registerServerLogs(client) {
     const until = change.new || null;
     return handleTimeout(guild, id, until, entry, entry.target);
   });
-  // Only these seven categories of events can reach the logs channel.
-  // Other bot modules use this callback for internal events; suppress those entries.
   return async () => false;
 }
