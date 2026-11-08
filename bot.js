@@ -171,6 +171,12 @@ const commands = [
     .addStringOption(o => o.setName('nick')
       .setDescription('Nick pracownika, np. coslubie')
       .setRequired(true).setMinLength(1).setMaxLength(100)),
+  new SlashCommandBuilder()
+    .setName('degrad')
+    .setDescription('Obniż stopień pracownika Benny’s dokładnie o jeden poziom')
+    .addStringOption(o => o.setName('nick')
+      .setDescription('Nick pracownika, np. coslubie')
+      .setRequired(true).setMinLength(1).setMaxLength(100)),
   new SlashCommandBuilder().setName('antyraid').setDescription('Zarządzaj zabezpieczeniem serwera Benny’s')
     .addSubcommand(s => s.setName('status').setDescription('Sprawdź aktywne zabezpieczenia'))
     .addSubcommand(s => s.setName('wlacz').setDescription('Włącz ochronę Anti-Raid'))
@@ -802,7 +808,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/awans nick** – awans pracownika o jeden stopień (kierownictwo)\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/awans nick** – awans o jeden stopień (kierownictwo)\n**/degrad nick** – degradacja o jeden stopień (kierownictwo)\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
