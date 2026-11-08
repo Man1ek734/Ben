@@ -167,13 +167,10 @@ const commands = [
   new SlashCommandBuilder().setName('urlop').setDescription('Otwórz panel urlopów i dyspozycyjności Benny’s'),
   new SlashCommandBuilder()
     .setName('awans')
-    .setDescription('Awansuj pracownika Benny’s i opublikuj uroczyste ogłoszenie')
-    .addUserOption(o => o.setName('pracownik').setDescription('Osoba, którą awansujesz').setRequired(true))
-    .addStringOption(o => o.setName('stopien').setDescription('Nowy, wyższy stopień pracowniczy')
-      .setRequired(true)
-      .addChoices(...ranks.map(rank => ({ name: rank.name, value: rank.key }))))
-    .addStringOption(o => o.setName('powod').setDescription('Za co przyznajesz awans?')
-      .setRequired(true).setMinLength(3).setMaxLength(400)),
+    .setDescription('Awansuj pracownika Benny’s automatycznie o jeden stopień')
+    .addStringOption(o => o.setName('nick')
+      .setDescription('Nick pracownika, np. coslubie')
+      .setRequired(true).setMinLength(1).setMaxLength(100)),
   new SlashCommandBuilder().setName('antyraid').setDescription('Zarządzaj zabezpieczeniem serwera Benny’s')
     .addSubcommand(s => s.setName('status').setDescription('Sprawdź aktywne zabezpieczenia'))
     .addSubcommand(s => s.setName('wlacz').setDescription('Włącz ochronę Anti-Raid'))
@@ -805,7 +802,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/awans** – awans pracownika (kierownictwo)\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/awans nick** – awans pracownika o jeden stopień (kierownictwo)\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
