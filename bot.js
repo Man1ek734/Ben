@@ -438,95 +438,20 @@ async function configure(guild) {
   let madeChannels = 0;
   let removedDuplicates = 0;
   for (const spec of ranks) {
-    let role = guild.roles.cache.find(r => r.name === spec.name);
-    if (!role && legacyRoles[spec.name]) {
-      role = guild.roles.cache.find(r => r.name === legacyRoles[spec.name]);
-      if (role) {
-        await role.edit({
-          name: spec.name, color: spec.color, permissions: spec.permissions,
-          hoist: !!spec.hoist, mentionable: false
-        }, 'Aktualizacja stopni Benny’s Motor Works');
-        console.log('BENNY RANKS: zmieniono ' + legacyRoles[spec.name] + ' na ' + spec.name);
-      }
-    }
-    if (!role) {
-      role = await guild.roles.create({
-        name: spec.name, color: spec.color, permissions: spec.permissions,
-        hoist: !!spec.hoist, mentionable: false, reason: 'Stopnie Benny’s Motor Works'
-      });
-      madeRoles++;
-      console.log('BENNY RANKS: dodano ' + role.name);
-    }
-    if (role.permissions.bitfield !== spec.permissions || role.color !== spec.color || role.hoist !== !!spec.hoist) {
-      await role.edit({
-        color: spec.color, permissions: spec.permissions, hoist: !!spec.hoist, mentionable: false
-      }, 'Aktualizacja uprawnień stopnia Benny’s');
-    }
-    roles[spec.key] = role;
-  }
-  for (const oldName of ['🚗・Klient', '💎・VIP']) {
-    const oldRole = guild.roles.cache.find(r => r.name === oldName);
-    if (oldRole) {
-      await oldRole.delete('Zastąpienie poprzednich ról stopniami Benny’s');
-      console.log('BENNY RANKS: usunięto poprzednią rolę ' + oldName);
-    }
-  }
-  try {
-    await guild.roles.fetch();
-    const self = await guild.members.fetchMe();
-    const desired = [...ranks].reverse().map(spec => guild.roles.cache.get(roles[spec.key].id));
-    const current = desired.map(role => ({ name: role.name, position: role.position, editable: role.editable }));
-    console.log('BENNY RANKS: najwyższa rola bota: ' + self.roles.highest.name + ' (pozycja ' + self.roles.highest.position + ')');
-    console.log('BENNY RANKS: pozycje przed sortowaniem: ' + JSON.stringify(current));
-    const locked = desired.filter(role => !role.editable);
-    if (locked.length) {
-      console.error('BENNY RANKS: bot nie może zmienić ról: ' + locked.map(role => role.name).join(', ') + '. Umieść rolę bota Benny’s ponad rangami warsztatu w ustawieniach Discorda.');
+    const role = guild.roles.cache.find(role => role.name === spec.name);
+    if (role) {
+      roles[spec.key] = role;
     } else {
-      const positions = desired.map(role => role.position).sort((a, b) => b - a);
-      await rest.patch(Routes.guildRoles(guild.id), {
-        body: desired.map((role, index) => ({ id: role.id, position: positions[index] }))
-      });
-      await guild.roles.fetch();
-      const after = desired.map(role => ({ name: role.name, position: guild.roles.cache.get(role.id)?.position }));
-      console.log('BENNY RANKS: pozycje po sortowaniu: ' + JSON.stringify(after));
-      const correct = after.every((entry, index) => index === 0 || after[index - 1].position > entry.position);
-      console.log(correct ? 'BENNY RANKS GOTOWE: Właściciel > Współwłaściciel > ... > Nowy' : 'BENNY RANKS: kolejność nie została w pełni zastosowana');
+      console.log('BENNY ROLE PRESERVE: stopień ' + spec.name +
+        ' nie istnieje i nie zostanie utworzony ponownie.');
     }
-  } catch (error) {
-    console.error('BENNY RANKS: błąd zmiany kolejności: ' + error.message + ' status=' + error.status + ' code=' + error.code + ' detail=' + JSON.stringify(error.rawError || {}));
   }
-  try {
-    await guild.roles.fetch();
-    const self = await guild.members.fetchMe();
-    let opiekun = guild.roles.cache.find(role => role.name === 'Opiekun Firm');
-    if (!opiekun) {
-      opiekun = await guild.roles.create({
-        name: 'Opiekun Firm',
-        color: 0x9b59b6,
-        permissions: 0n,
-        hoist: true,
-        mentionable: false,
-        reason: 'Dodanie rangi Opiekun Firm na prośbę właściciela'
-      });
-      madeRoles++;
-      console.log('BENNY OPIEKUN FIRM: utworzono rolę ' + opiekun.id);
-    }
-    await guild.roles.fetch();
-    opiekun = guild.roles.cache.get(opiekun.id);
-    const maximum = self.roles.highest.position - 1;
-    if (opiekun.editable && maximum > 0 && opiekun.position !== maximum) {
-      await opiekun.setPosition(maximum, 'Opiekun Firm najwyżej, ponad Właścicielem');
-      await guild.roles.fetch();
-      opiekun = guild.roles.cache.get(opiekun.id);
-    }
-    roles.opiekunFirm = opiekun;
-    console.log('BENNY OPIEKUN FIRM: rola=' + opiekun.name +
-      ', pozycja=' + opiekun.position +
-      ', rola bota=' + self.roles.highest.name +
-      ', pozycja bota=' + self.roles.highest.position);
-  } catch (error) {
-    console.error('BENNY OPIEKUN FIRM: nie udało się ustawić roli: ' + error.message);
-  }
+  const opiekun = guild.roles.cache.find(role => role.name === 'Opiekun Firm');
+  if (opiekun) roles.opiekunFirm = opiekun;
+  else console.log('BENNY ROLE PRESERVE: rola Opiekun Firm nie istnieje i nie zostanie odtworzona.');
+  console.log('BENNY ROLE PRESERVE: aktywne stopnie=' +
+    Object.values(roles).map(role => role.name).join(', ') +
+    '; bez tworzenia, usuwania, zmieniania nazw, uprawnień ani pozycji ról.');
   for (const section of layout) {
     let category = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === section.name);
     if (!category) {
