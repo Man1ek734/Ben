@@ -15,6 +15,9 @@ const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
 const welcomeRoleIds = ['1568803436030328832', '1568803257642393600'];
 const clientRoleId = '1568803257642393600';
+const bennysRoleId = '1568799161476976693';
+const clientCategories = new Set(['1566479027089318069', '1566479020089151641', '1566809427573473440']);
+const clientCategoryNames = new Set(['▶ LOBBY ◀', '● TICKETY', 'Współprace']);
 const clientWriteChannelId = '1566809429985329404';
 const channelToDeleteId = '1566803396881551431';
 if (!token || !clientId) {
@@ -49,7 +52,7 @@ const legacyRoles = {
   'Współwłaściciel': '💠・Współwłaściciel',
   'Właściciel': '👑・Właściciel'
 };
-const staffKeys = [...ranks.map(rank => rank.key), 'opiekunFirm'];
+const staffKeys = [...ranks.map(rank => rank.key), 'opiekunFirm', 'bennys'];
 const managers = ['manager', 'director', 'coowner', 'owner', 'opiekunFirm'];
 const executives = ['director', 'coowner', 'owner', 'opiekunFirm'];
 const legacyMoves = {
@@ -199,12 +202,12 @@ let setupPromise;
 function permissionsFor(guild, roles, area, botId, locked = false, channelName = null, categoryName = null) {
   const everyone = {
     id: guild.roles.everyone.id,
-    allow: area === 'public' ? [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] : [],
-    deny: area === 'public' ? [] : [PermissionFlagsBits.ViewChannel]
+    allow: [],
+    deny: [PermissionFlagsBits.ViewChannel]
   };
   if (locked) everyone.deny.push(...writingFlags);
   const result = [everyone];
-  const authorized = area === 'staff' ? staffKeys : area === 'executive' ? executives : [];
+  const authorized = area === 'executive' ? executives : staffKeys;
   for (const key of authorized) {
     if (!roles[key]) continue;
     const canPost = !locked || managers.includes(key);
@@ -233,12 +236,10 @@ function permissionsFor(guild, roles, area, botId, locked = false, channelName =
       }
     }
   }
-  if (area === 'public' &&
-      (categoryName === '▶ LOBBY ◀' || categoryName === '● TICKETY')) {
+  if (area === 'public' && clientCategoryNames.has(categoryName)) {
     const clientRole = guild.roles.cache.get(clientRoleId);
     if (clientRole) {
-      const writable = categoryName === '▶ LOBBY ◀' &&
-        channelName === '🏷️〢prosba-o-range';
+      const writable = channelName === '🏷️〢prosba-o-range';
       result.push({
         id: clientRole.id,
         allow: [
@@ -472,6 +473,9 @@ async function configure(guild) {
     guild.roles.cache.find(role => role.name === 'Opiekun Firm');
   if (opiekun) roles.opiekunFirm = opiekun;
   else console.log('BENNY ROLE PRESERVE: rola Opiekun Firm nie istnieje i nie zostanie odtworzona.');
+  const bennysRole = guild.roles.cache.get(bennysRoleId);
+  if (bennysRole) roles.bennys = bennysRole;
+  else console.error('BENNY DOSTEP: brak roli ・Benny\'s (' + bennysRoleId + ')');
   console.log('BENNY ROLE PRESERVE: aktywne stopnie=' +
     Object.values(roles).map(role => role.name).join(', ') +
     '; bez tworzenia, usuwania, zmieniania nazw, uprawnień ani pozycji ról.');
@@ -540,6 +544,75 @@ async function configure(guild) {
   } catch (error) {
     console.error('BENNY ROLE CLEANUP ERROR: ' + error.message);
   }
+  const clientGroup = guild.roles.cache.get(clientRoleId);
+  const everyoneRole = guild.roles.everyone;
+  let protectedChannels = 0;
+  let updatedClientChannels = 0;
+  for (const channel of guild.channels.cache.values()) {
+    if (!channel.permissionOverwrites) continue;
+    const isCategory = channel.type === ChannelType.GuildCategory;
+    const categoryId = isCategory ? channel.id : channel.parentId;
+    const allowedForClient = clientCategories.has(categoryId);
+    const isPrivateTicket = !isCategory &&
+      (channel.topic?.startsWith('BENNY_TICKET_OWNER:') ||
+        /^ticket-/.test(channel.name));
+    try {
+      const baseOverwrite = channel.permissionOverwrites.cache.get(everyoneRole.id);
+      if (!baseOverwrite?.deny.has(PermissionFlagsBits.ViewChannel) ||
+          baseOverwrite?.allow.has(PermissionFlagsBits.ViewChannel)) {
+        await channel.permissionOverwrites.edit(everyoneRole.id, {
+          ViewChannel: false
+        }, { reason: 'Benny’s: kanały widoczne wyłącznie po przydzieleniu roli' });
+      }
+      protectedChannels++;
+      if (!clientGroup || isPrivateTicket) continue;
+      const desiredView = allowedForClient;
+      const writable = !isCategory && channel.id === clientWriteChannelId;
+      const prior = channel.permissionOverwrites.cache.get(clientGroup.id);
+      const configured =
+        prior &&
+        (desiredView ? prior.allow.has(PermissionFlagsBits.ViewChannel) :
+          prior.deny.has(PermissionFlagsBits.ViewChannel)) &&
+        (writable ? prior.allow.has(PermissionFlagsBits.SendMessages) :
+          prior.deny.has(PermissionFlagsBits.SendMessages));
+      if (!configured) {
+        await channel.permissionOverwrites.edit(clientGroup.id, {
+          ViewChannel: desiredView,
+          ReadMessageHistory: desiredView,
+          SendMessages: writable,
+          SendMessagesInThreads: writable,
+          CreatePublicThreads: writable,
+          CreatePrivateThreads: writable
+        }, { reason: 'Benny’s: klient widzi tylko LOBBY, TICKETY i Współprace' });
+        updatedClientChannels++;
+      }
+    } catch (error) {
+      console.error('BENNY PRYWATNOSC ERROR: ' + channel.name + ' (' + channel.id +
+        '): ' + error.message);
+    }
+  }
+  console.log('BENNY PRYWATNOSC GOTOWE: kanały chronione=' + protectedChannels +
+    ', poprawione uprawnienia klienta=' + updatedClientChannels);
+  let visibilityErrors = 0;
+  for (const channel of guild.channels.cache.values()) {
+    if (!channel.permissionOverwrites) continue;
+    const categoryId = channel.type === ChannelType.GuildCategory ? channel.id : channel.parentId;
+    const privateTicket = channel.topic?.startsWith('BENNY_TICKET_OWNER:') ||
+      /^ticket-/.test(channel.name);
+    const expectedClient = clientCategories.has(categoryId) && !privateTicket;
+    const publicVisible = channel.permissionsFor(everyoneRole)?.has(PermissionFlagsBits.ViewChannel) || false;
+    const clientVisible = clientGroup && !privateTicket ?
+      !!channel.permissionsFor(clientGroup)?.has(PermissionFlagsBits.ViewChannel) : null;
+    if (publicVisible || (clientGroup && !privateTicket && clientVisible !== expectedClient)) {
+      visibilityErrors++;
+      console.error('BENNY PRYWATNOSC CHECK: ' + JSON.stringify({
+        channel: channel.name, id: channel.id, everyoneVisible: publicVisible,
+        clientVisible, expectedClient
+      }));
+    }
+  }
+  console.log('BENNY PRYWATNOSC AUDYT: błędów=' + visibilityErrors +
+    ', rola Benny\'s=' + (bennysRole?.name || 'BRAK'));
   const clientRole = guild.roles.cache.get(clientRoleId);
   if (clientRole) {
     const publicCategories = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory &&
