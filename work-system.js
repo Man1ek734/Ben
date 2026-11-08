@@ -44,7 +44,7 @@ function settle(data, id, end) {
 function currentRole(member) {
   for (let i = gradeRates.length - 1; i >= 0; i--) {
     const [name, rate] = gradeRates[i];
-    if (member.roles.cache.some(role => role.name === name)) return { name, rate };
+    if (member.roles.cache.some(role => (role.name === name || role.name === '・' + name))) return { name, rate };
   }
   return null;
 }
