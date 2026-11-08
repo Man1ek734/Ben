@@ -14,6 +14,9 @@ const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
 const welcomeRoleIds = ['1568803436030328832', '1568803257642393600'];
+const clientRoleId = '1568803257642393600';
+const clientWriteChannelId = '1566809429985329404';
+const channelToDeleteId = '1566803396881551431';
 if (!token || !clientId) {
   console.error('Brak DISCORD_TOKEN lub DISCORD_CLIENT_ID w zmiennych środowiskowych.');
   process.exit(1);
@@ -70,7 +73,6 @@ const layout = [
   },
   {
     name: '● TICKETY', area: 'public', channels: [
-      ['text', '🟥〢wzór-podania', 'Wzór podania dla kandydatów.', 'form'],
       ['text', '🔴〢tickety', 'Pomoc i prywatne zgłoszenia: /ticket.', 'tickets']
     ]
   },
@@ -194,7 +196,7 @@ const antiRaid = createAntiRaid(client, { guildId, log: sendLog,
   membersIntent: process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true',
   contentIntent: process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true' });
 let setupPromise;
-function permissionsFor(guild, roles, area, botId, locked = false) {
+function permissionsFor(guild, roles, area, botId, locked = false, channelName = null, categoryName = null) {
   const everyone = {
     id: guild.roles.everyone.id,
     allow: area === 'public' ? [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] : [],
@@ -229,6 +231,23 @@ function permissionsFor(guild, roles, area, botId, locked = false) {
         if (!entry.allow.includes(flag)) entry.allow.push(flag);
         entry.deny = entry.deny.filter(other => other !== flag);
       }
+    }
+  }
+  if (area === 'public' &&
+      (categoryName === '▶ LOBBY ◀' || categoryName === '● TICKETY')) {
+    const clientRole = guild.roles.cache.get(clientRoleId);
+    if (clientRole) {
+      const writable = categoryName === '▶ LOBBY ◀' &&
+        channelName === '🏷️〢prosba-o-range';
+      result.push({
+        id: clientRole.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.ReadMessageHistory,
+          ...(writable ? writingFlags : [])
+        ],
+        deny: writable ? [] : [...writingFlags]
+      });
     }
   }
   result.push({
@@ -461,13 +480,13 @@ async function configure(guild) {
     if (!category) {
       category = await guild.channels.create({
         name: section.name, type: ChannelType.GuildCategory,
-        permissionOverwrites: permissionsFor(guild, roles, section.area, client.user.id),
+        permissionOverwrites: permissionsFor(guild, roles, section.area, client.user.id, false, null, section.name),
         reason: 'Konfiguracja kategorii Benny’s Motor Works'
       });
       madeCategories++;
       console.log('BENNY SETUP: kategoria ' + category.name);
     } else {
-      const overwrites = permissionsFor(guild, roles, section.area, client.user.id);
+      const overwrites = permissionsFor(guild, roles, section.area, client.user.id, false, null, section.name);
       if (!overwritesMatch(category, overwrites)) {
         await category.permissionOverwrites.set(overwrites, 'Ustawienie uprawnień aktualnych stopni Benny’s');
       }
@@ -477,7 +496,7 @@ async function configure(guild) {
     for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
       const kind = type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
       const area = overrideArea || section.area;
-      const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey) || readOnlyChannels.has(name));
+      const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey) || readOnlyChannels.has(name), name, section.name);
       let channel = findManagedChannel(guild, category.id, kind, name, expectedNames, usedChannelIds);
       if (!channel && legacyMoves[name]) {
         const [sourceCategoryName, sourceChannelName] = legacyMoves[name];
@@ -520,6 +539,25 @@ async function configure(guild) {
     await cleanDuplicatedRanks(guild, [...ranks.map(rank => rank.name), 'Opiekun Firm']);
   } catch (error) {
     console.error('BENNY ROLE CLEANUP ERROR: ' + error.message);
+  }
+  const clientRole = guild.roles.cache.get(clientRoleId);
+  if (clientRole) {
+    const publicCategories = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory &&
+      (c.name === '▶ LOBBY ◀' || c.name === '● TICKETY'));
+    for (const category of publicCategories.values()) {
+      for (const channel of guild.channels.cache.filter(c => c.parentId === category.id).values()) {
+        if (channel.type !== ChannelType.GuildText) continue;
+        const perms = channel.permissionsFor(clientRole);
+        const canView = perms?.has(PermissionFlagsBits.ViewChannel) || false;
+        const canWrite = perms?.has(PermissionFlagsBits.SendMessages) || false;
+        console.log('BENNY KLIENT UPRAWNIENIA: ' + JSON.stringify({
+          id: channel.id, name: channel.name, view: canView, send: canWrite,
+          expectedSend: channel.id === clientWriteChannelId
+        }));
+      }
+    }
+  } else {
+    console.error('BENNY KLIENT UPRAWNIENIA: brak roli ' + clientRoleId);
   }
   let checkedEmployeePermissions = 0;
   let missingEmployeePermissions = 0;
@@ -614,13 +652,14 @@ client.once(Events.ClientReady, async ready => {
     const guild = await client.guilds.fetch(guildId);
     const activeGuild = await guild.fetch();
     await activeGuild.channels.fetch();
-    for (const id of ['1566809429985329404', '1566803396881551431']) {
-      const channel = activeGuild.channels.cache.get(id);
-      const parent = channel?.parentId && activeGuild.channels.cache.get(channel.parentId);
-      console.log('BENNY KANAL ID AUDIT: ' + JSON.stringify({
-        id, exists: !!channel, name: channel?.name || null,
-        parent: parent?.name || null, type: channel?.type ?? null
-      }));
+    const obsoleteChannel = activeGuild.channels.cache.get(channelToDeleteId);
+    if (obsoleteChannel) {
+      try {
+        await obsoleteChannel.delete('Benny’s: usunięcie kanału wzór-podania na prośbę administratora');
+        console.log('BENNY KANAL USUNIETY: ' + channelToDeleteId + ' (' + obsoleteChannel.name + ')');
+      } catch (error) {
+        console.error('BENNY KANAL DELETE ERROR: ' + channelToDeleteId + ': ' + error.message);
+      }
     }
     await runSetup(activeGuild);
     await activeGuild.roles.fetch();
