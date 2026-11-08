@@ -78,7 +78,6 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
     if (interaction.guildId !== guildId ||
         !['awans', 'degrad'].includes(interaction.commandName)) return false;
     const isDegrad = interaction.commandName === 'degrad';
-    const eventName = isDegrad ? 'degradacji' : 'awansu';
 
     await interaction.deferReply({ ephemeral: true });
     const guild = interaction.guild;
@@ -220,8 +219,9 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       console.log('BENNY ' + (isDegrad ? 'DEGRAD' : 'AWANS') + ' GOTOWE: ' +
         number + ' użytkownik=' + user.id +
         ' ze=' + current.role.name + ' na=' + targetRole.name + ' przez=' + actor.id);
-      await interaction.editReply('✅ Zapisano ' + eventName + ': **' + member.displayName +
-        '** → **' + targetRole.name + '**. Ogłoszenie: ' + report.url);
+      await interaction.editReply('✅ ' + (isDegrad ? 'Wykonano degradację' : 'Przyznano awans') +
+        ': **' + member.displayName + '** → **' + targetRole.name +
+        '**. Ogłoszenie: ' + report.url);
     } catch (error) {
       console.error('BENNY ' + (isDegrad ? 'DEGRAD' : 'AWANS') +
         ' PUBLIKACJA ERROR: ' + error.message);
