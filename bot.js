@@ -44,9 +44,9 @@ const legacyRoles = {
   'Współwłaściciel': '💠・Współwłaściciel',
   'Właściciel': '👑・Właściciel'
 };
-const staffKeys = ranks.map(rank => rank.key);
-const managers = ['manager', 'director', 'coowner', 'owner'];
-const executives = ['director', 'coowner', 'owner'];
+const staffKeys = [...ranks.map(rank => rank.key), 'opiekunFirm'];
+const managers = ['manager', 'director', 'coowner', 'owner', 'opiekunFirm'];
+const executives = ['director', 'coowner', 'owner', 'opiekunFirm'];
 const legacyMoves = {
   '📢〢ogloszenia': ['Informacje', '💬〢ogłoszenia'],
   '⭕〢wprowadzenie': ['🏁・START', '👋・start-tutaj'],
@@ -481,6 +481,7 @@ async function configure(guild) {
       await guild.roles.fetch();
       opiekun = guild.roles.cache.get(opiekun.id);
     }
+    roles.opiekunFirm = opiekun;
     console.log('BENNY OPIEKUN FIRM: rola=' + opiekun.name +
       ', pozycja=' + opiekun.position +
       ', rola bota=' + self.roles.highest.name +
@@ -548,6 +549,37 @@ async function configure(guild) {
       console.error('BENNY DUPLIKATY: problem w kategorii ' + category.name + ': ' + error.message);
     }
   }
+  let checkedEmployeePermissions = 0;
+  let missingEmployeePermissions = 0;
+  const employeeRoles = staffKeys.map(key => roles[key]).filter(Boolean);
+  for (const section of layout) {
+    const category = guild.channels.cache.find(c =>
+      c.type === ChannelType.GuildCategory && c.name === section.name);
+    if (!category) continue;
+    const targets = [
+      { channel: category, area: section.area },
+      ...section.channels.map(spec => ({
+        channel: guild.channels.cache.find(c =>
+          c.parentId === category.id && c.name === spec[1]),
+        area: spec[4] || section.area
+      }))
+    ];
+    for (const target of targets) {
+      if (!target.channel || target.area !== 'staff') continue;
+      for (const role of employeeRoles) {
+        checkedEmployeePermissions++;
+        const rights = target.channel.permissionsFor(role);
+        if (!rights?.has(PermissionFlagsBits.ViewChannel) ||
+            !rights?.has(PermissionFlagsBits.ReadMessageHistory)) {
+          missingEmployeePermissions++;
+          console.error('BENNY DOSTEP: BRAK ' + role.name + ' -> ' + target.channel.name);
+        }
+      }
+    }
+  }
+  console.log('BENNY DOSTEP PRACOWNIKOW: sprawdzono ' + checkedEmployeePermissions +
+    ' kombinacji kanał/stopień, brakujących=' + missingEmployeePermissions +
+    ', stopni=' + employeeRoles.length);
   const oldTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🎫・POMOC I ZGŁOSZENIA');
   const newTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
   if (oldTicketCategory && newTicketCategory) {
