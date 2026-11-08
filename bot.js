@@ -10,6 +10,7 @@ import { createWorkSystem } from './work-system.js';
 import { createLeaveSystem } from './leave-system.js';
 import { createAntiRaid } from './anti-raid.js';
 import { cleanDuplicatedRanks } from './rank-deduper.js';
+import { createPromotionSystem } from './promotion-system.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
@@ -164,6 +165,15 @@ const commands = [
   new SlashCommandBuilder().setName('ping').setDescription('Sprawdź, czy bot jest online'),
   new SlashCommandBuilder().setName('pomoc').setDescription('Zobacz dostępne komendy'),
   new SlashCommandBuilder().setName('urlop').setDescription('Otwórz panel urlopów i dyspozycyjności Benny’s'),
+  new SlashCommandBuilder()
+    .setName('awans')
+    .setDescription('Awansuj pracownika Benny’s i opublikuj uroczyste ogłoszenie')
+    .addUserOption(o => o.setName('pracownik').setDescription('Osoba, którą awansujesz').setRequired(true))
+    .addStringOption(o => o.setName('stopien').setDescription('Nowy, wyższy stopień pracowniczy')
+      .setRequired(true)
+      .addChoices(...ranks.map(rank => ({ name: rank.name, value: rank.key }))))
+    .addStringOption(o => o.setName('powod').setDescription('Za co przyznajesz awans?')
+      .setRequired(true).setMinLength(3).setMaxLength(400)),
   new SlashCommandBuilder().setName('antyraid').setDescription('Zarządzaj zabezpieczeniem serwera Benny’s')
     .addSubcommand(s => s.setName('status').setDescription('Sprawdź aktywne zabezpieczenia'))
     .addSubcommand(s => s.setName('wlacz').setDescription('Włącz ochronę Anti-Raid'))
@@ -194,6 +204,7 @@ if (process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true') baseIntents.pu
 const client = new Client({ intents: baseIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 const sendLog = registerServerLogs(client);
 const workSystem = createWorkSystem(client, guildId);
+const promotionSystem = createPromotionSystem(client, guildId, ranks, workSystem);
 const leaveSystem = createLeaveSystem(client, guildId);
 const antiRaid = createAntiRaid(client, { guildId, log: sendLog,
   membersIntent: process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true',
@@ -763,6 +774,7 @@ client.once(Events.ClientReady, async ready => {
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.guildId !== guildId) return;
   try {
+    if (await promotionSystem.handle(interaction)) return;
     if (await antiRaid.handle(interaction)) return;
     if (await leaveSystem.handle(interaction)) return;
     if (interaction.isButton() && interaction.customId.startsWith('benny_work_')) {
@@ -793,7 +805,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: '🏎️ Pong! Benny’s jest online.', ephemeral: true });
     }
     if (name === 'pomoc') {
-      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
+      return interaction.reply({ content: '🏁 **Benny’s Motor Works**\n**/ticket** – prywatne zgłoszenie\n**/zamknij-ticket** – zamknij zgłoszenie\n**/ping** – stan bota\n**/clear** – usuń wiadomości (moderacja)\n**/setup** – skonfiguruj serwer (zarząd)\n**/panel-ticket** – odśwież panel ticketów (zarząd)\n**/urlop** – panel urlopów i nieobecności\n**/awans** – awans pracownika (kierownictwo)\n**/antyraid** – ochrona przed raidami (zarząd)', ephemeral: true });
     }
     if (name === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
