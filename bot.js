@@ -13,6 +13,7 @@ import { cleanDuplicatedRanks } from './rank-deduper.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
+const welcomeRoleIds = ['1568803436030328832', '1568803257642393600'];
 if (!token || !clientId) {
   console.error('Brak DISCORD_TOKEN lub DISCORD_CLIENT_ID w zmiennych środowiskowych.');
   process.exit(1);
@@ -613,6 +614,13 @@ client.once(Events.ClientReady, async ready => {
     const guild = await client.guilds.fetch(guildId);
     const activeGuild = await guild.fetch();
     await runSetup(activeGuild);
+    await activeGuild.roles.fetch();
+    console.log('BENNY AUTOROLA: wymagany Server Members Intent=' +
+      (process.env.DISCORD_ENABLE_MEMBERS_INTENT === 'true') +
+      '; role=' + welcomeRoleIds.map(id => {
+        const role = activeGuild.roles.cache.get(id);
+        return role ? role.name + ' (' + id + ')' : 'BRAK (' + id + ')';
+      }).join(', '));
     await workSystem.setup(activeGuild);
     await leaveSystem.setup(activeGuild);
     await antiRaid.setup(activeGuild);
@@ -701,6 +709,35 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 client.on(Events.GuildMemberAdd, async member => {
   if (member.guild.id !== guildId) return;
+  try {
+    await member.guild.roles.fetch();
+    const self = await member.guild.members.fetchMe();
+    const eligible = welcomeRoleIds.filter(id => {
+      const role = member.guild.roles.cache.get(id);
+      if (!role) {
+        console.error('BENNY AUTOROLA: rola ' + id + ' nie istnieje.');
+        return false;
+      }
+      if (role.managed || role.position >= self.roles.highest.position) {
+        console.error('BENNY AUTOROLA: nie można przyznać ' + role.name +
+          ' (' + id + '), zbyt wysoka pozycja lub rola zarządzana.');
+        return false;
+      }
+      return true;
+    });
+    if (!self.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      console.error('BENNY AUTOROLA: bot wymaga Zarządzanie rolami.');
+    } else if (eligible.length) {
+      try {
+        await member.roles.add(eligible, 'Benny’s: automatyczne role po wejściu na serwer');
+        console.log('BENNY AUTOROLA: przyznano ' + eligible.join(', ') + ' użytkownikowi ' + member.id);
+      } catch (error) {
+        console.error('BENNY AUTOROLA ERROR: ' + member.id + ': ' + error.message);
+      }
+    }
+  } catch (error) {
+    console.error('BENNY AUTOROLA SETUP ERROR: ' + error.message);
+  }
   try {
     await member.guild.channels.fetch();
     const category = member.guild.channels.cache.find(c =>
