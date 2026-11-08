@@ -652,6 +652,16 @@ client.once(Events.ClientReady, async ready => {
     const guild = await client.guilds.fetch(guildId);
     const activeGuild = await guild.fetch();
     await activeGuild.channels.fetch();
+    await activeGuild.roles.fetch();
+    for (const id of ['1566479027089318069', '1566479020089151641', '1566809427573473440']) {
+      const role = activeGuild.roles.cache.get(id);
+      const channel = activeGuild.channels.cache.get(id);
+      const parent = channel?.parentId ? activeGuild.channels.cache.get(channel.parentId) : null;
+      console.log('BENNY TARGET ID CHECK: ' + JSON.stringify({
+        id, role: role?.name || null, channel: channel?.name || null,
+        type: channel?.type ?? null, parent: parent?.name || null
+      }));
+    }
     const obsoleteChannel = activeGuild.channels.cache.get(channelToDeleteId);
     if (obsoleteChannel) {
       try {
