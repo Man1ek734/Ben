@@ -1,15 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } from 'discord.js';
 import { payrollPeriodKey, payrollNextSaturday, periodBoundaryBetween } from './payroll-calendar.js';
 
 const STORE = process.env.WORK_DATA_FILE || '/data/benny-work-hours.json';
 const TIMEZONE = 'Europe/Warsaw';
 const gradeRates = [
-  ['Nowy',500], ['Uczeń',600], ['Praktykant',700],
-  ['Mechanik I Stopnia',800], ['Mechanik II Stopnia',900], ['Mechanik III Stopnia',1000], ['Mechanik IV Stopnia',1100],
-  ['Specjalista',1250], ['Ekspert Mechaniki',1400], ['Mistrz Mechaniki',1550], ['Lider Zespołu',1700],
-  ['Brygadzista',1850], ['Kierownik',2000], ['Dyrektor LSC',2200], ['Współwłaściciel',2400], ['Właściciel',2600]
+  ['Nowy',300], ['Uczeń',350], ['Praktykant',400],
+  ['Mechanik I Stopnia',450], ['Mechanik II Stopnia',500], ['Mechanik III Stopnia',550], ['Mechanik IV Stopnia',600],
+  ['Specjalista',700], ['Ekspert Mechaniki',800], ['Mistrz Mechaniki',900], ['Lider Zespołu',1000],
+  ['Brygadzista',1100], ['Kierownik',1200], ['Dyrektor LSC',1350], ['Współwłaściciel',1500], ['Właściciel',1600]
 ];
 const idFor = { start: 'benny_work_start', pause: 'benny_work_pause', stop: 'benny_work_stop', hours: 'benny_work_hours' };
 const statusName = { work: '🟢 W pracy', break: '🟡 Przerwa', off: '🔴 Po pracy' };
@@ -151,13 +151,12 @@ function payEmbed(key, summary) {
       duration(row.ms).padStart(10, ' ') + ' ' + currency(row.pay).padStart(12, ' '));
   }
   if (!rows.length) columns.push('Brak przepracowanych godzin w tym okresie.');
-  if (rows.length > 35) columns.push('Pozostali pracownicy znajdują się w załączniku.');
+  if (rows.length > 35) columns.push('Pozostali pracownicy nie mieszczą się w tabeli.');
   const fence = String.fromCharCode(96).repeat(3);
   return new EmbedBuilder()
     .setColor(0x24944d)
     .setTitle('💵 WYNAGRODZENIA • TYGODNIOWE ROZLICZENIE')
-    .setDescription('**' + key + ' 12:00 – ' + payrollNextSaturday(key) +
-      ' 12:00 (Polska)**\n\n' + fence + 'text\n' + columns.join('\n') + '\n' + fence)
+    .setDescription(fence + 'text\n' + columns.join('\n') + '\n' + fence)
     .addFields(
       { name: '💰 Łącznie do wypłaty', value: currency(rows.reduce((v, [, row]) => v + row.pay, 0)), inline: true },
       { name: '👥 Liczba pracowników', value: String(rows.length), inline: true },
@@ -165,18 +164,6 @@ function payEmbed(key, summary) {
     )
     .setFooter({ text: 'Benny’s • Wypłaty w grze realizuje zarząd' })
     .setTimestamp();
-}
-
-function payrollCSV(key, week) {
-  const escape = value => '"' + String(value ?? '').replace(/^[=+\-@]/, '_$&').replace(/"/g, '""') + '"';
-  const headers = ['Discord ID', 'Pracownik', 'Minuty', 'Godziny', 'Wynagrodzenie $'];
-  const lines = [headers.map(escape).join(',')];
-  for (const [id, row] of Object.entries(week.users).filter(([, row]) => row.ms > 0)) {
-    lines.push([id, row.name, Math.round(row.ms / 60000), (row.ms/3600000).toFixed(3), Math.round(row.pay)].map(escape).join(','));
-  }
-  return new AttachmentBuilder(Buffer.from('\uFEFF' + lines.join('\r\n'), 'utf8'), {
-    name: 'wynagrodzenia-' + key + '.csv'
-  });
 }
 
 function upgradePayrollData(data, now = Date.now()) {
@@ -285,6 +272,48 @@ export function createWorkSystem(client, guildId) {
       save(data);
     }
   }
+  async function cleanupPublishedReports() {
+    if (!paymentChannel) return;
+    const inspected = new Set();
+    let updated = 0;
+    const cleanMessage = async message => {
+      if (!message || inspected.has(message.id)) return;
+      inspected.add(message.id);
+      if (message.author.id !== client.user.id) return;
+      const embed = message.embeds.find(e => e.title === '💵 WYNAGRODZENIA • TYGODNIOWE ROZLICZENIE');
+      if (!embed) return;
+      const oldDescription = embed.description || '';
+      const newDescription = oldDescription.replace(
+        /^\*\*\d{4}-\d{2}-\d{2} 12:00\s*[–-]\s*\d{4}-\d{2}-\d{2} 12:00 \(Polska\)\*\*\s*/,
+        ''
+      );
+      if (!message.attachments.size && oldDescription === newDescription) return;
+      try {
+        await message.edit({
+          embeds: [EmbedBuilder.from(embed).setDescription(newDescription)],
+          attachments: []
+        });
+        updated++;
+        console.log('BENNY WYPŁATY: usunięto CSV i datę z raportu ' + message.id);
+      } catch (error) {
+        console.error('BENNY WYPŁATY: nie udało się poprawić raportu ' + message.id + ': ' + error.message);
+      }
+    };
+    for (const week of Object.values(data.weeks || {})) {
+      if (!week.messageId) continue;
+      const message = await paymentChannel.messages.fetch(week.messageId).catch(() => null);
+      await cleanMessage(message);
+    }
+    let cursor;
+    for (let page = 0; page < 3; page++) {
+      const batch = await paymentChannel.messages.fetch({limit: 100, ...(cursor ? {before: cursor} : {})});
+      for (const message of batch.values()) await cleanMessage(message);
+      cursor = batch.last()?.id;
+      if (batch.size < 100) break;
+    }
+    console.log('BENNY WYPŁATY: oczyszczono ' + updated + ' wcześniejszych raportów');
+  }
+
   async function publishWeeks() {
     const now = Date.now();
     const currentKey = payrollPeriodKey(now);
@@ -310,7 +339,8 @@ export function createWorkSystem(client, guildId) {
       const already = recent.find(message =>
         message.author.id === client.user.id &&
         message.embeds.some(embed => embed.title === '💵 WYNAGRODZENIA • TYGODNIOWE ROZLICZENIE' &&
-          embed.description?.startsWith('**' + key + ' 12:00'))
+          (embed.description?.startsWith('**' + key + ' 12:00') ||
+            data.weeks[key]?.messageId === message.id))
       );
       if (already) {
         week.messageId = already.id;
@@ -320,7 +350,6 @@ export function createWorkSystem(client, guildId) {
       }
       const message = await paymentChannel.send({
         embeds: [payEmbed(key, week)],
-        files: [payrollCSV(key, week)],
         allowedMentions: { parse: [] }
       });
       week.messageId = message.id;
@@ -382,6 +411,7 @@ export function createWorkSystem(client, guildId) {
     await guild.roles.fetch();
     await ensureChannels();
     await removeInvites();
+    await cleanupPublishedReports();
     await publishWeeks();
     await refreshPanel(true);
     if (!tickTimer) {
