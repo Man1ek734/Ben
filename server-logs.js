@@ -1,92 +1,253 @@
 import { Events, EmbedBuilder, AuditLogEvent, PermissionFlagsBits } from 'discord.js';
 
-const GUILD = '1566469722365493340';
-const DEST = '1566480686351650837';
-const red = 0xed4245, green = 0x57f287, yellow = 0xfee75c, blue = 0x3498db, gray = 0x2b2d31;
-const short = (x, n = 900) => String(x ?? 'Brak danych').slice(0, n) || 'Brak danych';
-const usr = u => u ? '<@' + u.id + '> (' + u.id + ')' : 'Nieznany';
-const chan = id => id ? '<#' + id + '>' : 'Nieznany';
+const GUILD_ID = '1566469722365493340';
+const LOG_CHANNEL_ID = '1566480686351650837';
+const THEME = {
+  deleted: 0xe65058,
+  joined: 0x35c99b,
+  left: 0x9099ab,
+  kicked: 0xffa53d,
+  banned: 0xf03e56,
+  muted: 0xf2b84a,
+  unmuted: 0x3db9d4
+};
+const MAX_CONTENT = 950;
+const LIMIT_MS = 15000;
+const mention = id => id ? '<@' + id + '>' : 'Nieznany użytkownik';
+const location = id => id ? '<#' + id + '>' : 'Nieznany kanał';
+const trim = (text, limit = MAX_CONTENT) => {
+  const value = String(text ?? '').trim();
+  return value ? (value.length > limit ? value.slice(0, limit - 1) + '…' : value) : 'Brak danych';
+};
+const occurredAt = time => '<t:' + Math.floor(time / 1000) + ':F>';
+const userImage = user => {
+  try { return user?.displayAvatarURL({ size: 256 }) || null; } catch { return null; }
+};
 
 export function registerServerLogs(client) {
-  let pending = Promise.resolve();
-  const send = (guild, title, values, color = gray) => {
-    if (guild?.id !== GUILD) return Promise.resolve(false);
-    pending = pending.catch(() => {}).then(async () => {
+  let pipeline = Promise.resolve();
+  const recently = new Map();
+
+  const once = (key, period = LIMIT_MS) => {
+    const now = Date.now();
+    for (const [name, value] of recently) if (now - value > 60000) recently.delete(name);
+    if (recently.has(key) && now - recently.get(key) < period) return false;
+    recently.set(key, now);
+    return true;
+  };
+  const note = async (guild, type, title, description, fields, user = null, eventTime = Date.now()) => {
+    if (guild?.id !== GUILD_ID) return false;
+    pipeline = pipeline.catch(() => {}).then(async () => {
       try {
-        const channel = await guild.channels.fetch(DEST).catch(() => null);
+        const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
         if (!channel?.isTextBased()) return false;
-        const embed = new EmbedBuilder().setColor(color).setTitle(title).setTimestamp().setFooter({ text: 'Benny’s Original Motor Works • Logi' });
-        for (const [name, value] of values.slice(0, 18)) embed.addFields({ name: short(name, 200), value: short(value) });
+        const logo = guild.iconURL({ size: 128 }) || client.user.displayAvatarURL({ size: 128 });
+        const embed = new EmbedBuilder()
+          .setColor(THEME[type] || THEME.left)
+          .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  •  LOGI', iconURL: logo })
+          .setTitle(title)
+          .setDescription(trim(description, 1800))
+          .addFields(
+            ...fields.filter(([, value]) => value !== null && value !== undefined)
+              .slice(0, 12).map(([name, value]) => ({
+                name: trim(name, 220),
+                value: trim(value, 980),
+                inline: ['👤 Użytkownik', '🛡️ Moderator', '📍 Kanał', '⏳ Czas trwania'].includes(name)
+              }))
+          )
+          .setFooter({ text: 'BENNY’S  •  BEZPIECZEŃSTWO I MODERACJA' })
+          .setTimestamp(eventTime);
+        const avatar = userImage(user);
+        if (avatar) embed.setThumbnail(avatar);
         await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
         return true;
-      } catch (e) { console.error('BENNY LOGI: ' + e.message); return false; }
-    });
-    return pending;
-  };
-  const event = (name, fn) => client.on(name, (...args) => Promise.resolve().then(() => fn(...args)).catch(e => console.error('BENNY LOGI EVENT: ' + e.message)));
-  const actor = async (g, action, id) => {
-    try {
-      const data = await g.fetchAuditLogs({ type: action, limit: 5 });
-      const entry = data.entries.find(e => (!id || e.target?.id === id) && Date.now() - e.createdTimestamp < 7000);
-      return entry?.executor ? usr(entry.executor) : 'Nie ustalono';
-    } catch { return 'Brak dostępu do dziennika audytu'; }
-  };
-  event(Events.ClientReady, async () => {
-    const guild = await client.guilds.fetch(GUILD);
-    await guild.roles.fetch();
-    const target = await guild.channels.fetch(DEST).catch(() => null);
-    if (!target?.isTextBased()) return console.error('BENNY LOGI: kanał ' + DEST + ' nie istnieje lub brak dostępu');
-    if (target.permissionsFor(guild.roles.everyone)?.has(PermissionFlagsBits.ViewChannel)) {
-      await target.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: false });
-      for (const name of ['Dyrektor LSC', 'Współwłaściciel', 'Właściciel']) {
-        const role = guild.roles.cache.find(x => x.name === name);
-        if (role) await target.permissionOverwrites.edit(role, { ViewChannel: true, ReadMessageHistory: true, SendMessages: true });
+      } catch (error) {
+        console.error('BENNY LOGI: ' + error.message);
+        return false;
       }
-      await target.permissionOverwrites.edit(client.user.id, { ViewChannel: true, SendMessages: true, EmbedLinks: true, ReadMessageHistory: true });
+    });
+    return pipeline;
+  };
+  const event = (name, listener) => client.on(name, (...args) => {
+    Promise.resolve().then(() => listener(...args))
+      .catch(error => console.error('BENNY LOGI [' + String(name) + ']: ' + error.message));
+  });
+  const findAudit = async (guild, action, userId) => {
+    try {
+      const result = await guild.fetchAuditLogs({ type: action, limit: 8 });
+      return result.entries.find(entry =>
+        entry.target?.id === userId &&
+        Math.abs(Date.now() - entry.createdTimestamp) < 12000
+      ) || null;
+    } catch { return null; }
+  };
+  const moderatorField = entry => entry?.executor?.id ? mention(entry.executor.id) : 'Nie ustalono';
+  const reasonField = entry => trim(entry?.reason || 'Nie podano');
+  const subject = (entry, fallback = null) => entry?.target?.displayAvatarURL ? entry.target : fallback;
+  const auditUser = entry => entry?.target?.id || entry?.targetId || null;
+  const handleKick = (guild, entry, fallback = null) => {
+    const id = auditUser(entry) || fallback?.id;
+    if (!id || !once('kick:' + id)) return;
+    return note(guild, 'kicked', '👢  UŻYTKOWNIK WYRZUCONY', 
+      'Pracownik moderacji usunął użytkownika z serwera.', [
+        ['👤 Użytkownik', mention(id)],
+        ['🛡️ Moderator', moderatorField(entry)],
+        ['📝 Powód', reasonField(entry)],
+        ['🕒 Data zdarzenia', occurredAt(Date.now())]
+      ], subject(entry, fallback));
+  };
+  const handleBan = (guild, entry, fallback = null) => {
+    const id = auditUser(entry) || fallback?.id;
+    if (!id || !once('ban:' + id)) return;
+    return note(guild, 'banned', '🔨  NAŁOŻONO BANA',
+      'Użytkownik został zablokowany na serwerze Benny’s.', [
+        ['👤 Użytkownik', mention(id)],
+        ['🛡️ Moderator', moderatorField(entry)],
+        ['📝 Powód', reasonField(entry)],
+        ['🕒 Data zdarzenia', occurredAt(Date.now())]
+      ], subject(entry, fallback));
+  };
+  const handleTimeout = (guild, memberId, until, entry = null, user = null) => {
+    if (!memberId || !once('timeout:' + memberId + ':' + (until || 'off'))) return;
+    const active = !!until && new Date(until).getTime() > Date.now();
+    const ms = active ? new Date(until).getTime() - Date.now() : 0;
+    const interval = ms >= 3600000 ? Math.ceil(ms / 3600000) + ' godz.' :
+      ms >= 60000 ? Math.ceil(ms / 60000) + ' min' :
+        ms ? Math.ceil(ms / 1000) + ' s' : 'Zakończono';
+    return note(guild, active ? 'muted' : 'unmuted',
+      active ? '🔇  NADANO MUTE' : '🔊  ZDJĘTO MUTE',
+      active ? 'Użytkownik otrzymał ograniczenie komunikacji (timeout).' :
+        'Ograniczenie komunikacji użytkownika zostało zdjęte.', [
+          ['👤 Użytkownik', mention(memberId)],
+          ['🛡️ Moderator', moderatorField(entry)],
+          ['⏳ Czas trwania', interval],
+          ['📝 Powód', reasonField(entry)],
+          ['🕒 Do kiedy', active ? '<t:' + Math.floor(new Date(until).getTime() / 1000) + ':F>' : 'Nie dotyczy']
+        ], user);
+  };
+
+  event(Events.ClientReady, async () => {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.roles.fetch();
+    const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+    if (!channel?.isTextBased()) {
+      console.error('BENNY LOGI: brak dostępu do kanału ' + LOG_CHANNEL_ID);
+      return;
     }
-    const ok = await send(guild, '🟢 System logów uruchomiony', [['Kanał', chan(DEST)], ['Status', 'Monitorowanie zdarzeń Benny’s aktywne']], green);
-    console.log(ok ? 'BENNY LOGI GOTOWE: ' + DEST : 'BENNY LOGI: nie można publikować');
+    if (channel.permissionsFor(guild.roles.everyone)?.has(PermissionFlagsBits.ViewChannel)) {
+      await channel.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: false });
+    }
+    for (const name of ['Dyrektor LSC', 'Współwłaściciel', 'Właściciel', 'Opiekun Firm']) {
+      const role = guild.roles.cache.find(item => item.name === name);
+      if (role) await channel.permissionOverwrites.edit(role, {
+        ViewChannel: true, ReadMessageHistory: true
+      }).catch(error => console.error('BENNY LOGI ROLA ' + name + ': ' + error.message));
+    }
+    console.log('BENNY LOGI GOTOWE: tylko wiadomości usunięte / wejścia / wyjścia / kick / ban / mute, kanał=' + LOG_CHANNEL_ID);
   });
-  event(Events.MessageDelete, m => !m.author?.bot && m.channelId !== DEST && send(m.guild, '🗑️ Usunięto wiadomość', [['Autor', usr(m.author)], ['Kanał', chan(m.channelId)], ['Treść', m.content || 'Niedostępna bez Message Content Intent']], red));
-  event(Events.MessageUpdate, (a, b) => !b.author?.bot && b.channelId !== DEST && a.content !== b.content && send(b.guild, '✏️ Edytowano wiadomość', [['Autor', usr(b.author)], ['Kanał', chan(b.channelId)], ['Przed', a.content || 'Niedostępna'], ['Po', b.content || 'Niedostępna']], yellow));
-  event(Events.MessageDeleteBulk, ms => { const m = ms.first(); return m?.channelId !== DEST && send(m?.guild, '🧹 Usunięto wiadomości', [['Kanał', chan(m?.channelId)], ['Liczba', ms.size]], red); });
-  event(Events.GuildMemberAdd, m => send(m.guild, '👋 Dołączono do serwera', [['Osoba', usr(m.user)]], green));
-  event(Events.GuildMemberRemove, async m => { const by = await actor(m.guild, AuditLogEvent.MemberKick, m.id); return send(m.guild, by.startsWith('<@') ? '👢 Wyrzucono użytkownika' : '🚪 Użytkownik opuścił serwer', [['Osoba', usr(m.user)], ['Moderator', by]], red); });
-  event(Events.GuildMemberUpdate, async (a,b) => {
-    const added = b.roles.cache.filter(x => !a.roles.cache.has(x.id));
-    const removed = a.roles.cache.filter(x => !b.roles.cache.has(x.id));
-    for (const role of added.values()) await send(b.guild,'➕ Nadano rolę',[['Osoba',usr(b.user)],['Rola',role.name],['Nadał',await actor(b.guild,AuditLogEvent.MemberRoleUpdate,b.id)]],green);
-    for (const role of removed.values()) await send(b.guild,'➖ Odebrano rolę',[['Osoba',usr(b.user)],['Rola',role.name],['Odebrał',await actor(b.guild,AuditLogEvent.MemberRoleUpdate,b.id)]],red);
-    if(a.nickname !== b.nickname) await send(b.guild,'📝 Zmieniono nick',[['Osoba',usr(b.user)],['Przed',a.nickname || a.user.username],['Po',b.nickname || b.user.username]],yellow);
-    if(a.communicationDisabledUntilTimestamp !== b.communicationDisabledUntilTimestamp) await send(b.guild,'🔇 Zmieniono timeout',[['Osoba',usr(b.user)],['Do',b.communicationDisabledUntilTimestamp || 'Zdjęto']],yellow);
+
+  event(Events.MessageDelete, message => {
+    if (!message.guild || message.guildId !== GUILD_ID || message.channelId === LOG_CHANNEL_ID ||
+        message.author?.bot) return;
+    const authorId = message.author?.id;
+    const attachments = [...(message.attachments?.values() || [])]
+      .map(file => file.name || 'Plik').slice(0, 8);
+    const body = message.content ? trim(message.content, MAX_CONTENT) : 'Treść niedostępna lub wiadomość zawierała tylko załączniki.';
+    return note(message.guild, 'deleted', '🗑️  USUNIĘTO WIADOMOŚĆ',
+      'Wiadomość została skasowana z kanału tekstowego.', [
+        ['👤 Użytkownik', authorId ? mention(authorId) : 'Nieznany (wiadomość nie była w pamięci bota)'],
+        ['📍 Kanał', location(message.channelId)],
+        ['💬 Usunięta treść', body],
+        ...(attachments.length ? [['📎 Załączniki', trim(attachments.join('\n'), 600)]] : []),
+        ['🕒 Wysłano', message.createdTimestamp ? occurredAt(message.createdTimestamp) : 'Nieznana data']
+      ], message.author);
   });
-  event(Events.GuildBanAdd, async b => send(b.guild,'🔨 Nałożono bana',[['Osoba',usr(b.user)],['Moderator',await actor(b.guild,AuditLogEvent.MemberBanAdd,b.user.id)]],red));
-  event(Events.GuildBanRemove, async b => send(b.guild,'✅ Zdjęto bana',[['Osoba',usr(b.user)],['Moderator',await actor(b.guild,AuditLogEvent.MemberBanRemove,b.user.id)]],green));
-  event(Events.GuildRoleCreate, async r => send(r.guild,'🎭 Utworzono rolę',[['Rola',r.name],['Autor',await actor(r.guild,AuditLogEvent.RoleCreate,r.id)]],green));
-  event(Events.GuildRoleDelete, async r => send(r.guild,'🗑️ Usunięto rolę',[['Rola',r.name],['Autor',await actor(r.guild,AuditLogEvent.RoleDelete,r.id)]],red));
-  event(Events.GuildRoleUpdate, (a,b) => (a.name !== b.name || a.permissions.bitfield !== b.permissions.bitfield || a.color !== b.color || a.position !== b.position) && send(b.guild,'⚙️ Zmieniono rolę',[['Rola',b.name],['Zmiana',short(a.name + ' → ' + b.name + ', pozycja ' + a.position + ' → ' + b.position)]],yellow));
-  event(Events.ChannelCreate, async c => c.id !== DEST && send(c.guild,'📁 Utworzono kanał',[['Nazwa',c.name],['Autor',await actor(c.guild,AuditLogEvent.ChannelCreate,c.id)]],green));
-  event(Events.ChannelDelete, async c => c.id !== DEST && send(c.guild,'🗑️ Usunięto kanał',[['Nazwa',c.name],['Autor',await actor(c.guild,AuditLogEvent.ChannelDelete,c.id)]],red));
-  event(Events.ChannelUpdate, (a,b) => b.id !== DEST && (a.name !== b.name || a.parentId !== b.parentId || a.topic !== b.topic) && send(b.guild,'⚙️ Zmieniono kanał',[['Kanał',chan(b.id)],['Przed',a.name],['Po',b.name]],yellow));
-  event(Events.VoiceStateUpdate, async (a,b) => {
-    if(a.channelId !== b.channelId) await send(b.guild,'🔊 Ruch na głosowym',[['Osoba',usr(b.member?.user)],['Z',chan(a.channelId)],['Do',chan(b.channelId)]],blue);
-    if(a.serverMute !== b.serverMute || a.serverDeaf !== b.serverDeaf) await send(b.guild,'🔇 Zmieniono wyciszenie',[['Osoba',usr(b.member?.user)],['Wyciszony',String(b.serverMute)],['Ogłuszony',String(b.serverDeaf)]],yellow);
+  event(Events.MessageDeleteBulk, messages => {
+    const first = messages.first();
+    if (!first?.guild || first.guildId !== GUILD_ID || first.channelId === LOG_CHANNEL_ID) return;
+    return note(first.guild, 'deleted', '🧹  USUNIĘTO WIELE WIADOMOŚCI',
+      'Wykryto zbiorcze czyszczenie rozmowy.', [
+        ['📍 Kanał', location(first.channelId)],
+        ['🗑️ Liczba wiadomości', String(messages.size)],
+        ['🕒 Data zdarzenia', occurredAt(Date.now())]
+      ]);
   });
-  event(Events.GuildUpdate, (a,b) => a.name !== b.name && send(b,'🏠 Zmieniono nazwę serwera',[['Przed',a.name],['Po',b.name]],yellow));
-  event(Events.InviteCreate, i => send(i.guild,'🔗 Utworzono zaproszenie',[['Kod',i.code],['Utworzył',usr(i.inviter)]],green));
-  event(Events.InviteDelete, i => send(i.guild,'🗑️ Usunięto zaproszenie',[['Kod',i.code]],red));
-  event(Events.MessageReactionAdd, (reaction, user) => !user.bot && reaction.message.channelId !== DEST && send(reaction.message.guild,'➕ Dodano reakcję',[['Osoba',usr(user)],['Reakcja',reaction.emoji.toString()],['Kanał',chan(reaction.message.channelId)]],blue));
-  event(Events.MessageReactionRemove, (reaction, user) => !user.bot && reaction.message.channelId !== DEST && send(reaction.message.guild,'➖ Usunięto reakcję',[['Osoba',usr(user)],['Reakcja',reaction.emoji.toString()],['Kanał',chan(reaction.message.channelId)]],yellow));
-  event(Events.AutoModerationActionExecution, e => send(e.guild,'🛡️ AutoMod zablokował działanie',[['Osoba','<@'+e.userId+'>'],['Kanał',chan(e.channelId)],['Reguła',e.ruleId]],yellow));
-  event(Events.AutoModerationRuleCreate, r => send(r.guild,'🛡️ Dodano regułę AutoMod',[['Nazwa',r.name]],green));
-  event(Events.AutoModerationRuleUpdate, (a,b) => send(b.guild,'🛡️ Zmieniono AutoMod',[['Reguła',b.name]],yellow));
-  event(Events.AutoModerationRuleDelete, r => send(r.guild,'🛡️ Usunięto regułę AutoMod',[['Nazwa',r.name]],red));
-  event(Events.GuildEmojiCreate, e => send(e.guild,'😀 Dodano emoji',[['Nazwa',e.name]],green));
-  event(Events.GuildEmojiDelete, e => send(e.guild,'🗑️ Usunięto emoji',[['Nazwa',e.name]],red));
-  event(Events.GuildEmojiUpdate, (a,b) => a.name !== b.name && send(b.guild,'✏️ Zmieniono emoji',[['Przed',a.name],['Po',b.name]],yellow));
-  event(Events.ThreadCreate, t => send(t.guild,'🧵 Utworzono wątek',[['Nazwa',t.name]],green));
-  event(Events.ThreadDelete, t => send(t.guild,'🗑️ Usunięto wątek',[['Nazwa',t.name]],red));
-  event(Events.GuildAuditLogEntryCreate, (entry,g) => send(g,'🛡️ Dziennik audytu',[['Akcja',AuditLogEvent[entry.action] || entry.action],['Wykonał',usr(entry.executor)],['Cel',entry.target?.id || 'Nieznany'],['Powód',entry.reason || 'Nie podano']],gray));
-  event(Events.InteractionCreate, i => i.isChatInputCommand() && send(i.guild,'⌨️ Komenda bota',[['Osoba',usr(i.user)],['Komenda','/' + i.commandName],['Kanał',chan(i.channelId)]],gray));
-  return send;
+
+  event(Events.GuildMemberAdd, member => {
+    if (member.guild.id !== GUILD_ID) return;
+    return note(member.guild, 'joined', '👋  NOWA OSOBA NA SERWERZE',
+      'Witaj w ekipie Benny’s Original Motor Works!', [
+        ['👤 Użytkownik', mention(member.id)],
+        ['📅 Konto utworzono', occurredAt(member.user.createdTimestamp)],
+        ['👥 Liczba członków', String(member.guild.memberCount)],
+        ['🕒 Dołączono', occurredAt(Date.now())]
+      ], member.user);
+  });
+  event(Events.GuildMemberRemove, async member => {
+    if (member.guild.id !== GUILD_ID) return;
+    await new Promise(resolve => setTimeout(resolve, 1400));
+    const [kick, ban] = await Promise.all([
+      findAudit(member.guild, AuditLogEvent.MemberKick, member.id),
+      findAudit(member.guild, AuditLogEvent.MemberBanAdd, member.id)
+    ]);
+    if (ban || recently.has('ban:' + member.id)) {
+      if (ban) return handleBan(member.guild, ban, member.user);
+      return;
+    }
+    if (kick || recently.has('kick:' + member.id)) {
+      if (kick) return handleKick(member.guild, kick, member.user);
+      return;
+    }
+    return note(member.guild, 'left', '🚪  UŻYTKOWNIK OPUŚCIŁ SERWER',
+      'Użytkownik samodzielnie opuścił społeczność Benny’s.', [
+        ['👤 Użytkownik', mention(member.id)],
+        ['👥 Pozostało członków', String(member.guild.memberCount)],
+        ['🕒 Data wyjścia', occurredAt(Date.now())]
+      ], member.user);
+  });
+  event(Events.GuildBanAdd, async ban => {
+    if (ban.guild.id !== GUILD_ID) return;
+    const audit = await findAudit(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
+    return handleBan(ban.guild, audit || { target: ban.user }, ban.user);
+  });
+
+  event(Events.GuildMemberUpdate, async (before, after) => {
+    if (after.guild.id !== GUILD_ID) return;
+    const oldUntil = before.communicationDisabledUntilTimestamp || null;
+    const newUntil = after.communicationDisabledUntilTimestamp || null;
+    if (oldUntil === newUntil) return;
+    const audit = await findAudit(after.guild, AuditLogEvent.MemberUpdate, after.id);
+    return handleTimeout(after.guild, after.id, newUntil, audit, after.user);
+  });
+  event(Events.VoiceStateUpdate, async (before, after) => {
+    if (after.guild.id !== GUILD_ID || before.serverMute === after.serverMute) return;
+    const active = after.serverMute;
+    const audit = await findAudit(after.guild, AuditLogEvent.MemberUpdate, after.id);
+    if (!once('voicemute:' + after.id + ':' + active)) return;
+    return note(after.guild, active ? 'muted' : 'unmuted',
+      active ? '🎙️  WYCISZONO NA GŁOSOWYM' : '🎙️  ZDJĘTO WYCISZENIE',
+      active ? 'Moderator wyłączył użytkownikowi możliwość mówienia.' :
+        'Moderator przywrócił użytkownikowi głos.', [
+          ['👤 Użytkownik', mention(after.id)],
+          ['🛡️ Moderator', moderatorField(audit)],
+          ['🔊 Kanał głosowy', location(after.channelId || before.channelId)],
+          ['📝 Powód', reasonField(audit)]
+        ], after.member?.user);
+  });
+
+  event(Events.GuildAuditLogEntryCreate, (entry, guild) => {
+    if (guild?.id !== GUILD_ID) return;
+    const id = auditUser(entry);
+    if (entry.action === AuditLogEvent.MemberKick) return handleKick(guild, entry);
+    if (entry.action === AuditLogEvent.MemberBanAdd) return handleBan(guild, entry);
+    if (entry.action !== AuditLogEvent.MemberUpdate || !id) return;
+    const change = entry.changes?.find(item =>
+      item.key === 'communication_disabled_until' || item.key === 'communicationDisabledUntil');
+    if (!change) return;
+    const until = change.new || null;
+    return handleTimeout(guild, id, until, entry, entry.target);
+  });
+  // Only these seven categories of events can reach the logs channel.
+  // Other bot modules use this callback for internal events; suppress those entries.
+  return async () => false;
 }
