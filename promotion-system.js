@@ -5,10 +5,46 @@ import { EmbedBuilder, PermissionFlagsBits, ChannelType } from 'discord.js';
 const STORE = process.env.PROMOTION_DATA_FILE || '/data/benny-promotions.json';
 const CATEGORY = '● Strefa Pracownika';
 const CHANNEL = '📈〢awanse-degrady';
-const COLOR = 0xc21f30;
+const COLOR = 0xc91e32;
 const RANK_PREFIX = '・';
 const MANAGEMENT = new Set(['Opiekun Firm', 'Właściciel', 'Współwłaściciel', 'Dyrektor LSC', 'Kierownik']);
-const clean = text => String(text || '').replace(/@/g, '@\u200b').slice(0, 450);
+const clean = text => String(text || '').replace(/@/g, '@\u200b').replace(/[\r\n]+/g, ' ').slice(0, 120);
+const nameOf = user => String(user.nick || user.user?.global_name || user.user?.username || user.user?.id || 'Użytkownik');
+const normalize = value => String(value || '').normalize('NFKC').trim().toLocaleLowerCase('pl-PL');
+
+async function findByNick(guild, nick) {
+  const query = nick.trim().replace(/^@(?=\D)/, '');
+  const byId = query.match(/^<@!?(\d{17,20})>$/) || query.match(/^(\d{17,20})$/);
+  if (byId) {
+    const member = await guild.members.fetch({ user: byId[1], force: true }).catch(() => null);
+    return { member };
+  }
+  let raw;
+  try {
+    raw = await guild.client.rest.get('/guilds/' + guild.id + '/members/search', {
+      query: new URLSearchParams({ query, limit: '100' })
+    });
+  } catch (error) {
+    console.error('BENNY AWANS NICK SEARCH: ' + error.message);
+    return { error: '❌ Nie udało się wyszukać pracownika. Spróbuj wpisać jego pełny nick lub ID.' };
+  }
+  const entries = (Array.isArray(raw) ? raw : []).filter(item => item.user?.id);
+  const names = item => [item.nick, item.user?.global_name, item.user?.username]
+    .filter(Boolean).map(normalize);
+  const needle = normalize(query);
+  const exact = entries.filter(item => names(item).includes(needle));
+  const starts = entries.filter(item => names(item).some(name => name.startsWith(needle)));
+  const matches = exact.length ? exact : starts.length ? starts : entries;
+  if (matches.length === 0) return { error: '❌ Nie znalazłem pracownika o nicku **' + clean(query) + '**.' };
+  if (matches.length > 1) {
+    return { error: '⚠️ Znalazłem kilka osób pasujących do nicku **' + clean(query) +
+      '**: ' + matches.slice(0, 5).map(item => '**' + clean(nameOf(item)) + '**').join(', ') +
+      '. Wpisz pełny nick lub ID użytkownika.' };
+  }
+  const member = await guild.members.fetch({ user: matches[0].user.id, force: true }).catch(() => null);
+  if (!member) return { error: '❌ Nie mogę odczytać danych tego pracownika.' };
+  return { member };
+}
 
 function load() {
   try {
@@ -46,25 +82,16 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       return true;
     }
 
-    const selected = interaction.options.getString('stopien', true);
-    const spec = ranks.find(item => item.key === selected);
-    if (!spec) {
-      await interaction.editReply('❌ Nieznany stopień.');
+    const nickname = interaction.options.getString('nick', true).trim();
+    const found = await findByNick(guild, nickname);
+    if (found.error || !found.member) {
+      await interaction.editReply(found.error || '❌ Nie znaleziono pracownika.');
       return true;
     }
-    const user = interaction.options.getUser('pracownik', true);
-    const reason = interaction.options.getString('powod', true).trim();
-    if (user.bot || user.id === actor.id) {
+    const member = found.member;
+    const user = member.user;
+    if (user.bot || member.id === actor.id) {
       await interaction.editReply('❌ Nie można awansować bota ani samego siebie.');
-      return true;
-    }
-    if (!reason) {
-      await interaction.editReply('❌ Podaj uzasadnienie awansu.');
-      return true;
-    }
-    const member = await guild.members.fetch(user.id).catch(() => null);
-    if (!member) {
-      await interaction.editReply('❌ Nie znaleziono pracownika na serwerze.');
       return true;
     }
     const bot = await guild.members.fetchMe();
@@ -73,17 +100,6 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       return true;
     }
     await guild.roles.fetch();
-    const targetRole = guild.roles.cache.find(role => role.name === RANK_PREFIX + spec.name)
-      || guild.roles.cache.find(role => role.name === spec.name);
-    if (!targetRole || targetRole.managed || targetRole.position >= bot.roles.highest.position) {
-      await interaction.editReply('❌ Docelowy stopień nie istnieje albo jest powyżej roli bota.');
-      return true;
-    }
-    if (!isOwner && targetRole.position >= actor.roles.highest.position) {
-      await interaction.editReply('❌ Nie możesz przyznać stopnia równego lub wyższego od własnego.');
-      return true;
-    }
-
     const currentRanks = ranks.map((rank, index) => {
       const role = member.roles.cache.find(role => role.name === RANK_PREFIX + rank.name ||
         role.name === rank.name);
@@ -94,10 +110,21 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       return true;
     }
     const current = currentRanks.sort((a, b) => b.index - a.index)[0];
-    const nextIndex = ranks.findIndex(rank => rank.key === spec.key);
-    if (nextIndex <= current.index) {
-      await interaction.editReply('❌ Awans musi prowadzić na **wyższy** stopień niż obecny: **' +
-        current.role.name + '**.');
+    const next = ranks[current.index + 1];
+    if (!next) {
+      await interaction.editReply('ℹ️ **' + clean(member.displayName) +
+        '** ma już najwyższy stopień: **' + clean(current.role.name) + '**.');
+      return true;
+    }
+    const targetRole = guild.roles.cache.find(role => role.name === RANK_PREFIX + next.name)
+      || guild.roles.cache.find(role => role.name === next.name);
+    if (!targetRole || targetRole.managed || targetRole.position >= bot.roles.highest.position) {
+      await interaction.editReply('❌ Brakuje następnego stopnia **' + next.name +
+        '** albo bot nie może go nadać. Nie pomijam stopni.');
+      return true;
+    }
+    if (!isOwner && targetRole.position >= actor.roles.highest.position) {
+      await interaction.editReply('❌ Nie możesz przyznać stopnia równego lub wyższego od własnego.');
       return true;
     }
     const category = guild.channels.cache.find(channel =>
@@ -123,8 +150,8 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
     newIds.push(targetRole.id);
     let updatedMember;
     try {
-      updatedMember = await member.roles.set(newIds, 'Benny’s: awans na ' + targetRole.name +
-        ' | przez ' + interaction.user.username + ' | ' + reason.slice(0, 200));
+      updatedMember = await member.roles.set(newIds, 'Benny’s: awans o jeden stopień na ' +
+        targetRole.name + ' | nadał ' + interaction.user.username);
     } catch (error) {
       console.error('BENNY AWANS ROLE ERROR: ' + error.message);
       await interaction.editReply('❌ Nie udało się zmienić roli: ' + error.message.slice(0, 250));
@@ -141,28 +168,23 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
     try { save(data); } catch (error) {
       console.error('BENNY AWANS ZAPIS: ' + error.message);
     }
-    const timestamp = Math.floor(Date.now() / 1000);
     const logo = guild.iconURL({ size: 128 }) || client.user.displayAvatarURL({ size: 128 });
     const embed = new EmbedBuilder()
       .setColor(COLOR)
-      .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  •  DZIAŁ KADR', iconURL: logo })
-      .setTitle('🏆  AWANS PRACOWNIKA')
+      .setAuthor({ name: 'BENNY’S ORIGINAL MOTOR WORKS  •  KADRY', iconURL: logo })
+      .setTitle('🏆  AWANS W BENNY’S')
       .setDescription(
-        '### 🔥 NOWY POZIOM W EKIPIE BENNY’S\n' +
-        '**' + clean(member.displayName) + '** otrzymuje zasłużony awans!\n' +
-        'Gratulujemy i życzymy kolejnych świetnych realizacji. 🏁\n\n' +
-        '━━━━━━━━━━━━━━━━━━━━━━━━'
+        '**' + clean(member.displayName) + '** awansuje na kolejny stopień!\n' +
+        'Doceniamy zaangażowanie i pracę na rzecz warsztatu.\n\n' +
+        '**Gratulujemy i życzymy dalszych sukcesów!**'
       )
       .addFields(
-        { name: '🚀 NOWY STOPIEŃ', value: '<@&' + targetRole.id + '>', inline: true },
-        { name: '🔧 POPRZEDNI STOPIEŃ', value: '<@&' + current.role.id + '>', inline: true },
-        { name: '👤 PRACOWNIK', value: '<@' + user.id + '>', inline: true },
-        { name: '🛡️ AWANS PRZYZNAŁ', value: '<@' + actor.id + '>', inline: true },
-        { name: '📋 UZASADNIENIE', value: clean(reason), inline: false },
-        { name: '🗓️ DATA AWANSU', value: '<t:' + timestamp + ':F>', inline: false }
+        { name: '🔧 POPRZEDNI STOPIEŃ', value: clean(current.role.name), inline: true },
+        { name: '🚀 NOWY STOPIEŃ', value: '**' + clean(targetRole.name) + '**', inline: true },
+        { name: '🛡️ AWANS PRZYZNAŁ', value: '<@' + actor.id + '>', inline: false }
       )
       .setThumbnail(user.displayAvatarURL({ size: 256 }))
-      .setFooter({ text: 'BENNY’S • AWANSE I KARIERA  |  ' + number })
+      .setFooter({ text: 'BENNY’S • KADRY   |   ' + number })
       .setTimestamp();
 
     try {
