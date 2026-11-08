@@ -147,7 +147,7 @@ export function registerServerLogs(client) {
       results.push(note(guild, group.type, group.title, group.description, [
         ['👤 Użytkownik', mention(memberId)],
         ['🎭 Rola', trim(list, 950)],
-        ['🛡️ Nadał / odebrał', moderatorField(entry)],
+        ['🛡️ Moderator', moderatorField(entry)],
         ['📝 Powód', reasonField(entry)],
         ['🕒 Data zdarzenia', occurredAt(entry.createdTimestamp || Date.now())]
       ], subject(entry), entry.createdTimestamp || Date.now()));
