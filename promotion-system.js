@@ -121,8 +121,9 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       .filter(role => role.id !== guild.id && !oldIds.includes(role.id))
       .map(role => role.id);
     newIds.push(targetRole.id);
+    let updatedMember;
     try {
-      await member.roles.set(newIds, 'Benny’s: awans na ' + targetRole.name +
+      updatedMember = await member.roles.set(newIds, 'Benny’s: awans na ' + targetRole.name +
         ' | przez ' + interaction.user.username + ' | ' + reason.slice(0, 200));
     } catch (error) {
       console.error('BENNY AWANS ROLE ERROR: ' + error.message);
@@ -130,7 +131,7 @@ export function createPromotionSystem(client, guildId, ranks, workSystem) {
       return true;
     }
     try {
-      await workSystem.roleChanged(member, member);
+      await workSystem.roleChanged(member, updatedMember);
     } catch (error) {
       console.error('BENNY AWANS GODZINY: ' + error.message);
     }
