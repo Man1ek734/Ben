@@ -167,7 +167,8 @@ export function registerServerLogs(client) {
       await channel.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: false });
     }
     for (const name of ['Dyrektor LSC', 'Współwłaściciel', 'Właściciel', 'Opiekun Firm']) {
-      const role = guild.roles.cache.find(item => item.name === name);
+      const role = guild.roles.cache.find(item => item.name === '・' + name) ||
+        guild.roles.cache.find(item => item.name === name);
       if (role) await channel.permissionOverwrites.edit(role, {
         ViewChannel: true, ReadMessageHistory: true
       }).catch(error => console.error('BENNY LOGI ROLA ' + name + ': ' + error.message));
