@@ -34,7 +34,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
         continue;
       }
       const links=item.triggerType===AutoModerationRuleTriggerType.Keyword;
-      const exemptRoles=server.roles.cache.filter(r=>(links?exempt:staff).has(r.name)).map(r=>r.id);
+      const exemptRoles=server.roles.cache.filter(r=>(links?exempt:staff).has(r.name.replace(/^・/, ''))).map(r=>r.id);
       const actions=[
         {type:AutoModerationActionType.BlockMessage,
           metadata:{customMessage:links?'Benny’s: linki są zabronione. Wyciszenie 5 minut.':
@@ -89,7 +89,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
   async function checkBannedImages(message,member) {
     if(!contentIntent || !message.attachments?.size)return false;
     if(member.id===member.guild.ownerId ||
-      member.roles.cache.some(r=>exempt.has(r.name)))return false;
+      member.roles.cache.some(r=>exempt.has(r.name.replace(/^・/, ''))))return false;
     let match=false;
     for(const file of message.attachments.values()) {
       try {
@@ -135,7 +135,7 @@ export function createAntiRaid(client,{guildId,log,membersIntent=false,contentIn
       if(!m)return;
       if(await checkBannedImages(message,m))return;
       if(m.id===m.guild.ownerId || m.permissions.has(PermissionFlagsBits.ManageMessages) ||
-        m.roles.cache.some(r=>staff.has(r.name)))return;
+        m.roles.cache.some(r=>staff.has(r.name.replace(/^・/, ''))))return;
       const now=Date.now(), id=message.author.id, timestamps=flood.get(id)||[];
       timestamps.push(now);
       while(timestamps[0]<now-8000) timestamps.shift();
