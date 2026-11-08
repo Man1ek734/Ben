@@ -125,6 +125,24 @@ const layout = [
 
 ];
 const readOnly = new Set(['welcome', 'start', 'rules', 'announcements', 'roles', 'offer', 'prices', 'tickets', 'form', 'partners']);
+const readOnlyChannels = new Set([
+  '💬〢zebrania',
+  '💵〢wynagrodzenia',
+  '📜〢czarna-lista',
+  '⏰-wyrobione-godziny',
+  '💰〢godzinówki',
+  '📈〢awanse-degrady',
+  '📉〢zwolnienia',
+  '🧠〢plusy-minusy',
+  '🗓️〢urlopy',
+  '📣〢dostępność-zarządu'
+]);
+const writingFlags = [
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.SendMessagesInThreads,
+  PermissionFlagsBits.CreatePublicThreads,
+  PermissionFlagsBits.CreatePrivateThreads
+];
 const ticketKinds = {
   pomoc: { label: 'Pomoc ogólna', emoji: '❓', description: 'Pytania i kontakt z ekipą Benny’s', staff: ['leader', 'foreman', 'manager', 'director', 'coowner', 'owner'] },
   rekrutacja: { label: 'Podanie o pracę', emoji: '📋', description: 'Rekrutacja do warsztatu', staff: ['manager', 'director', 'coowner', 'owner'] },
@@ -175,34 +193,54 @@ const antiRaid = createAntiRaid(client, { guildId, log: sendLog,
   contentIntent: process.env.DISCORD_ENABLE_MESSAGE_CONTENT_INTENT === 'true' });
 let setupPromise;
 function permissionsFor(guild, roles, area, botId, locked = false) {
-  const everyone = { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [] };
-  if (area !== 'public') {
-    everyone.allow = [];
-    everyone.deny = [PermissionFlagsBits.ViewChannel];
-  }
-  if (locked) everyone.deny.push(PermissionFlagsBits.SendMessages);
+  const everyone = {
+    id: guild.roles.everyone.id,
+    allow: area === 'public' ? [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] : [],
+    deny: area === 'public' ? [] : [PermissionFlagsBits.ViewChannel]
+  };
+  if (locked) everyone.deny.push(...writingFlags);
   const result = [everyone];
   const authorized = area === 'staff' ? staffKeys : area === 'executive' ? executives : [];
   for (const key of authorized) {
-    if (roles[key]) {
-      result.push({
-        id: roles[key].id,
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect],
-        deny: []
-      });
-    }
+    if (!roles[key]) continue;
+    const canPost = !locked || managers.includes(key);
+    result.push({
+      id: roles[key].id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.Connect,
+        ...(canPost ? writingFlags : [])
+      ],
+      deny: locked && !canPost ? [...writingFlags] : []
+    });
   }
   if (locked) {
     for (const key of managers) {
-      if (roles[key] && !result.some(o => o.id === roles[key].id)) {
-        result.push({ id: roles[key].id, allow: [PermissionFlagsBits.SendMessages], deny: [] });
-      } else if (roles[key]) {
-        const entry = result.find(o => o.id === roles[key].id);
-        if (!entry.allow.includes(PermissionFlagsBits.SendMessages)) entry.allow.push(PermissionFlagsBits.SendMessages);
+      if (!roles[key]) continue;
+      let entry = result.find(o => o.id === roles[key].id);
+      if (!entry) {
+        entry = { id: roles[key].id, allow: [], deny: [] };
+        result.push(entry);
+      }
+      for (const flag of writingFlags) {
+        if (!entry.allow.includes(flag)) entry.allow.push(flag);
+        entry.deny = entry.deny.filter(other => other !== flag);
       }
     }
   }
-  result.push({ id: botId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.Connect], deny: [] });
+  result.push({
+    id: botId,
+    allow: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.EmbedLinks,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.Connect,
+      ...writingFlags
+    ],
+    deny: []
+  });
   return result;
 }
 const unwantedAutomaticEmbeds = new Set([
@@ -510,7 +548,7 @@ async function configure(guild) {
     for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
       const kind = type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
       const area = overrideArea || section.area;
-      const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey));
+      const overwrites = permissionsFor(guild, roles, area, client.user.id, readOnly.has(embedKey) || readOnlyChannels.has(name));
       let channel = findManagedChannel(guild, category.id, kind, name, expectedNames, usedChannelIds);
       if (!channel && legacyMoves[name]) {
         const [sourceCategoryName, sourceChannelName] = legacyMoves[name];
@@ -551,34 +589,38 @@ async function configure(guild) {
   }
   let checkedEmployeePermissions = 0;
   let missingEmployeePermissions = 0;
+  let incorrectlyWritableChannels = 0;
   const employeeRoles = staffKeys.map(key => roles[key]).filter(Boolean);
   for (const section of layout) {
+    if (section.area === 'executive') continue;
     const category = guild.channels.cache.find(c =>
       c.type === ChannelType.GuildCategory && c.name === section.name);
     if (!category) continue;
-    const targets = [
-      { channel: category, area: section.area },
-      ...section.channels.map(spec => ({
-        channel: guild.channels.cache.find(c =>
-          c.parentId === category.id && c.name === spec[1]),
-        area: spec[4] || section.area
-      }))
-    ];
-    for (const target of targets) {
-      if (!target.channel || target.area !== 'staff') continue;
+    for (const [type, name, topic, embedKey, overrideArea] of section.channels) {
+      const channel = guild.channels.cache.find(c =>
+        c.parentId === category.id && c.name === name);
+      if (!channel) continue;
+      const locked = readOnly.has(embedKey) || readOnlyChannels.has(name);
       for (const role of employeeRoles) {
         checkedEmployeePermissions++;
-        const rights = target.channel.permissionsFor(role);
-        if (!rights?.has(PermissionFlagsBits.ViewChannel) ||
-            !rights?.has(PermissionFlagsBits.ReadMessageHistory)) {
+        const rights = channel.permissionsFor(role);
+        const canRead = rights?.has(PermissionFlagsBits.ViewChannel) &&
+          rights?.has(PermissionFlagsBits.ReadMessageHistory);
+        const canWrite = rights?.has(PermissionFlagsBits.SendMessages) || false;
+        if (!canRead) {
           missingEmployeePermissions++;
-          console.error('BENNY DOSTEP: BRAK ' + role.name + ' -> ' + target.channel.name);
+          console.error('BENNY DOSTEP: brak widoczności ' + role.name + ' -> ' + name);
+        }
+        if (locked && !managers.some(key => roles[key]?.id === role.id) && canWrite) {
+          incorrectlyWritableChannels++;
+          console.error('BENNY DOSTEP: niezamierzony zapis ' + role.name + ' -> ' + name);
         }
       }
     }
   }
   console.log('BENNY DOSTEP PRACOWNIKOW: sprawdzono ' + checkedEmployeePermissions +
     ' kombinacji kanał/stopień, brakujących=' + missingEmployeePermissions +
+    ', niepoprawnych uprawnień pisania=' + incorrectlyWritableChannels +
     ', stopni=' + employeeRoles.length);
   const oldTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🎫・POMOC I ZGŁOSZENIA');
   const newTicketCategory = guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '● TICKETY');
