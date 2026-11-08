@@ -484,6 +484,22 @@ async function configure(guild) {
   } catch (error) {
     console.error('BENNY MEMBERS DIAGNOSTIC: REST list failed status=' + error.status +
       ' code=' + error.code + ' message=' + error.message);
+    try {
+      const result = await client.rest.get('/guilds/' + guild.id + '/members/search', {
+        query: new URLSearchParams({ query: '', limit: '1000' })
+      });
+      const matches = Array.isArray(result) ? result : [];
+      const counts = new Map();
+      for (const member of matches) {
+        for (const id of member.roles || []) counts.set(id, (counts.get(id) || 0) + 1);
+      }
+      console.log('BENNY MEMBERS SEARCH: count=' + matches.length + ', memberCount=' + guild.memberCount +
+        ', roleCounts=' + JSON.stringify(duplicatesFound.map(group =>
+          group.map(role => ({ id: role.id, count: counts.get(role.id) || 0 })))));
+    } catch (searchError) {
+      console.error('BENNY MEMBERS SEARCH: failed status=' + searchError.status +
+        ' code=' + searchError.code + ' message=' + searchError.message);
+    }
   }
   const roles = {};
   let madeRoles = 0;
