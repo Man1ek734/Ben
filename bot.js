@@ -2,7 +2,8 @@ import 'dotenv/config';
 import {
   Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder,
   PermissionFlagsBits, ChannelType, EmbedBuilder,
-  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Partials
+  ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Partials,
+  ModalBuilder, TextInputBuilder, TextInputStyle
 } from 'discord.js';
 import { registerServerLogs } from './server-logs.js';
 import { findManagedChannel, cleanupManagedDuplicates } from './channel-dedupe.js';
@@ -158,6 +159,7 @@ const ticketKinds = {
   wspolpraca: { label: 'Współpraca', emoji: '🤝', description: 'Propozycja partnerstwa lub współpracy', staff: ['manager', 'director', 'coowner', 'owner'] }
 };
 const panelMenuId = 'benny_ticket_category_v2';
+const recruitmentModalId = 'benny_recruitment_application_v1';
 const closeButtonId = 'benny_ticket_close_v1';
 const confirmButtonId = 'benny_ticket_close_confirm_v1';
 const cancelButtonId = 'benny_ticket_close_cancel_v1';
@@ -316,6 +318,53 @@ async function removeAutomaticEmbeds(guild) {
   }
   console.log('BENNY CLEANUP GOTOWE: usunięto ' + removed + ' automatycznych wiadomości; kanały i panele zachowane.');
 }
+function recruitmentApplicationModal() {
+  const modal = new ModalBuilder()
+    .setCustomId(recruitmentModalId)
+    .setTitle('Benny’s • Podanie o pracę');
+  const questions = [
+    ['ic_name', 'Imię i nazwisko (IC)', 'np. John Carter', TextInputStyle.Short, 80],
+    ['ic_age', 'Wiek (IC)', 'np. 25', TextInputStyle.Short, 3],
+    ['experience', 'Czy masz doświadczenie jako mechanik?', 'Opisz krótko swoje doświadczenie', TextInputStyle.Paragraph, 400],
+    ['motivation', 'Dlaczego chcesz dołączyć do Benny’s?', 'Napisz, dlaczego chcesz u nas pracować', TextInputStyle.Paragraph, 600],
+    ['availability', 'Ile czasu dziennie możesz pracować?', 'np. 2–3 godziny', TextInputStyle.Short, 100]
+  ];
+  for (const [id, label, placeholder, style, maxLength] of questions) {
+    const input = new TextInputBuilder()
+      .setCustomId(id)
+      .setLabel(label)
+      .setPlaceholder(placeholder)
+      .setStyle(style)
+      .setMaxLength(maxLength)
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+  }
+  return modal;
+}
+
+async function submitRecruitmentApplication(interaction) {
+  const questions = [
+    ['ic_name', 'Imię i nazwisko (IC)'],
+    ['ic_age', 'Wiek (IC)'],
+    ['experience', 'Doświadczenie jako mechanik'],
+    ['motivation', 'Dlaczego chcesz dołączyć do Benny’s?'],
+    ['availability', 'Ile czasu dziennie możesz pracować?']
+  ];
+  const answers = questions.map(([id, label]) => ({
+    label, answer: interaction.fields.getTextInputValue(id).trim()
+  }));
+  if (answers.some(item => !item.answer)) {
+    return interaction.reply({ content: 'Wypełnij wszystkie pola podania i spróbuj ponownie.', ephemeral: true });
+  }
+  if (!/^[0-9]{1,3}$/.test(answers[1].answer)) {
+    return interaction.reply({ content: 'Wiek (IC) wpisz cyframi, np. 25. Wybierz ponownie „Podanie o pracę”, aby poprawić formularz.', ephemeral: true });
+  }
+  const description = answers.map((item, index) =>
+    '**' + String(index + 1).padStart(2, '0') + '. ' + item.label + ':**\n' + item.answer
+  ).join('\n\n');
+  return openTicket(interaction, 'rekrutacja', description);
+}
+
 function ticketPanelMessage() {
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
@@ -419,8 +468,10 @@ async function openTicket(interaction, kindKey, description = '') {
     permissionOverwrites: overrides,
     reason: 'Benny’s: prywatny ticket ' + kind.label + ' (' + interaction.user.id + ')'
   });
-  const content = '**Klient:** <@' + interaction.user.id + '>\n**Kategoria:** ' + kind.emoji + ' ' + kind.label
-    + (description ? '\n**Opis:** ' + description : '\nOpisz szczegółowo swoją sprawę poniżej.')
+  const application = kindKey === 'rekrutacja' && description;
+  const content = '**' + (application ? 'Kandydat' : 'Klient') + ':** <@' + interaction.user.id + '>\n**Kategoria:** ' + kind.emoji + ' ' + kind.label
+    + (application ? '\n\n**Wypełnione podanie:**\n\n' + description
+      : description ? '\n**Opis:** ' + description : '\nOpisz szczegółowo swoją sprawę poniżej.')
     + '\n\nAby zamknąć zgłoszenie, kliknij przycisk poniżej lub wpisz **/zamknij-ticket**.';
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
@@ -784,7 +835,13 @@ client.on(Events.InteractionCreate, async interaction => {
       return workSystem.handle(interaction);
     }
     if (interaction.isStringSelectMenu() && interaction.customId === panelMenuId) {
+      if (interaction.values[0] === 'rekrutacja') {
+        return interaction.showModal(recruitmentApplicationModal());
+      }
       return openTicket(interaction, interaction.values[0]);
+    }
+    if (interaction.isModalSubmit() && interaction.customId === recruitmentModalId) {
+      return submitRecruitmentApplication(interaction);
     }
     if (interaction.isButton() && interaction.customId === closeButtonId) {
       return askToCloseTicket(interaction);
