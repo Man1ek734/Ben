@@ -15,7 +15,8 @@ import { createPromotionSystem } from './promotion-system.js';
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
 const guildId = process.env.DISCORD_GUILD_ID || '1566469722365493340';
-const welcomeRoleIds = ['1568803436030328832', '1568803257642393600'];
+const welcomeRoleIds = ['1568803257642393600', '1568803436030328832'];
+const welcomeChannelId = '1566809428693618791';
 const clientRoleId = '1568803257642393600';
 const bennysRoleId = '1568799161476976693';
 const clientCategories = new Set(['1566479027089318069', '1566479020089151641', '1566809427573473440']);
@@ -933,7 +934,10 @@ client.on(Events.GuildMemberAdd, async member => {
     } else if (eligible.length) {
       try {
         await member.roles.add(eligible, 'Benny’s: automatyczne role po wejściu na serwer');
-        console.log('BENNY AUTOROLA: przyznano ' + eligible.join(', ') + ' użytkownikowi ' + member.id);
+        const freshMember = await member.guild.members.fetch({ user: member.id, force: true });
+        const granted = welcomeRoleIds.filter(id => freshMember.roles.cache.has(id));
+        console.log('BENNY AUTOROLA: użytkownik=' + member.id + ' przyznane=' + granted.join(', ') +
+          (granted.length === welcomeRoleIds.length ? ' OK' : ' BRAK CZĘŚCI RÓL'));
       } catch (error) {
         console.error('BENNY AUTOROLA ERROR: ' + member.id + ': ' + error.message);
       }
@@ -942,17 +946,17 @@ client.on(Events.GuildMemberAdd, async member => {
     console.error('BENNY AUTOROLA SETUP ERROR: ' + error.message);
   }
   try {
-    await member.guild.channels.fetch();
-    const category = member.guild.channels.cache.find(c =>
-      c.type === ChannelType.GuildCategory && c.name === '▶ LOBBY ◀');
-    const channel = member.guild.channels.cache.find(c =>
-      c.type === ChannelType.GuildText &&
-      c.parentId === category?.id &&
-      c.name.includes('nowi'));
-    if (!channel) {
-      console.error('BENNY WELCOME: brak kanału nowi w LOBBY');
+    const channel = await member.guild.channels.fetch(welcomeChannelId).catch(error => {
+      console.error('BENNY WELCOME: nie można pobrać kanału ' + welcomeChannelId + ': ' + error.message);
+      return null;
+    });
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      console.error('BENNY WELCOME: kanał powitalny ' + welcomeChannelId + ' nie jest dostępny jako kanał tekstowy.');
       return;
     }
+    await member.guild.channels.fetch();
+    const category = member.guild.channels.cache.get(channel.parentId) ||
+      member.guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '▶ LOBBY ◀');
     const rankChannel = member.guild.channels.cache.find(c =>
       c.parentId === category.id && c.name.includes('prosba-o-range'));
     const recruitChannel = member.guild.channels.cache.find(c =>
